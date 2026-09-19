@@ -1,6 +1,7 @@
 # api/app/services/media.py
 # File handling: detection, audio extraction, image description, downloads.
 
+import os
 import json
 import shutil
 import subprocess
@@ -17,11 +18,19 @@ def _find_tool(name: str, extra_paths: list[str] | None = None) -> str:
     """
     Find an executable by name.
     Prioritizes python packages first to prevent cloud runtime path blocks.
+    Automatically handles Linux permission settings for embedded binaries.
     """
     # 1. Force python bundle fallback first for ffmpeg
     if name == "ffmpeg":
         try:
-            return imageio_ffmpeg.get_ffmpeg_exe()
+            exe_path = imageio_ffmpeg.get_ffmpeg_exe()
+            
+            # Grant execute permission (+x) if running on a Linux cloud container
+            if os.name != 'nt' and exe_path and os.path.exists(exe_path):
+                current_mode = os.stat(exe_path).st_mode
+                os.chmod(exe_path, current_mode | 0o111)
+                
+            return exe_path
         except Exception:
             pass
 
@@ -90,8 +99,13 @@ def extract_audio(video_or_audio: Path) -> Path:
         "-ac", "1", "-ar", "16000", "-b:a", "64k",
         str(out),
     ]
-    # Appended stderr to stdout capture to uncover granular internal errors if they persist
-    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    
+    # Run and capture exact internal system error details if it breaks
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        error_msg = result.stderr or result.stdout or f"Exit status {result.returncode}"
+        raise RuntimeError(f"FFmpeg conversion error: {error_msg}")
+        
     return out
 
 
@@ -120,7 +134,11 @@ def download_from_url(url: str) -> tuple[Path, dict]:
         "--print-json",
         url,
     ]
-    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        error_msg = result.stderr or result.stdout or f"Exit status {result.returncode}"
+        raise RuntimeError(f"yt-dlp download error: {error_msg}")
 
     meta = json.loads(result.stdout.strip().splitlines()[-1])
 
