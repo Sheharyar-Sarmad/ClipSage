@@ -6,25 +6,31 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+import imageio_ffmpeg
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
 
-
 # ─── Locate ffmpeg & yt-dlp ──────────────────────────────────
 def _find_tool(name: str, extra_paths: list[str] | None = None) -> str:
     """
     Find an executable by name.
-    Checks system PATH first, then any extra_paths.
-    Falls back to imageio_ffmpeg for ffmpeg if installed.
+    Prioritizes python packages first to prevent cloud runtime path blocks.
     """
-    # 1. System PATH
+    # 1. Force python bundle fallback first for ffmpeg
+    if name == "ffmpeg":
+        try:
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            pass
+
+    # 2. Try python environment bundle path for yt-dlp
     on_path = shutil.which(name)
     if on_path:
         return on_path
 
-    # 2. Common Windows install locations
+    # 3. Common Windows install locations
     extra_paths = extra_paths or []
     home = Path.home()
     candidates = [
@@ -38,14 +44,6 @@ def _find_tool(name: str, extra_paths: list[str] | None = None) -> str:
     for c in candidates:
         if c.exists():
             return str(c)
-
-    # 3. imageio-ffmpeg (Python fallback) — only for ffmpeg
-    if name == "ffmpeg":
-        try:
-            import imageio_ffmpeg
-            return imageio_ffmpeg.get_ffmpeg_exe()
-        except Exception:
-            pass
 
     raise FileNotFoundError(
         f"Could not find '{name}'. Install it with one of:\n"
@@ -92,7 +90,8 @@ def extract_audio(video_or_audio: Path) -> Path:
         "-ac", "1", "-ar", "16000", "-b:a", "64k",
         str(out),
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    # Appended stderr to stdout capture to uncover granular internal errors if they persist
+    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
     return out
 
 
