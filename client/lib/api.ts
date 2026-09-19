@@ -1,7 +1,7 @@
 import { toast } from "react-toastify";
 import type { ProcessResponse } from "./types";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL;
 
 export async function processMedia(input: {
   url?: string;
