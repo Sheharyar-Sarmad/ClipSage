@@ -1,0 +1,11 @@
+fastapi
+python-dotenv
+pydantic-settings
+
+uvicorn[standard]
+imageio-ffmpeg
+yt-dlp
+
+langchain
+langchain_community
+langchain_core
