@@ -17,27 +17,24 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
 def _find_tool(name: str, extra_paths: list[str] | None = None) -> str:
     """
     Find an executable by name.
-    Prioritizes python packages first to prevent cloud runtime path blocks.
-    Automatically handles Linux permission settings for embedded binaries.
+    Prioritizes system PATH first (crucial for Render native apt package tool),
+    then checks local directories, falling back to imageio-ffmpeg as a last resort.
     """
-    # 1. Force python bundle fallback first for ffmpeg
-    if name == "ffmpeg":
-        try:
-            exe_path = imageio_ffmpeg.get_ffmpeg_exe()
-            
-            # Grant execute permission (+x) if running on a Linux cloud container
-            if os.name != 'nt' and exe_path and os.path.exists(exe_path):
-                current_mode = os.stat(exe_path).st_mode
-                os.chmod(exe_path, current_mode | 0o111)
-                
-            return exe_path
-        except Exception:
-            pass
-
-    # 2. Try python environment bundle path for yt-dlp
+    # 1. System PATH - PRIORITIZED FIRST FOR PRODUCTION
     on_path = shutil.which(name)
     if on_path:
         return on_path
+
+    # 2. imageio-ffmpeg (Python fallback) — only if not found on system PATH
+    if name == "ffmpeg":
+        try:
+            exe_path = imageio_ffmpeg.get_ffmpeg_exe()
+            if os.name != 'nt' and exe_path and os.path.exists(exe_path):
+                current_mode = os.stat(exe_path).st_mode
+                os.chmod(exe_path, current_mode | 0o111)
+            return exe_path
+        except Exception:
+            pass
 
     # 3. Common Windows install locations
     extra_paths = extra_paths or []
@@ -100,7 +97,6 @@ def extract_audio(video_or_audio: Path) -> Path:
         str(out),
     ]
     
-    # Run and capture exact internal system error details if it breaks
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         error_msg = result.stderr or result.stdout or f"Exit status {result.returncode}"
