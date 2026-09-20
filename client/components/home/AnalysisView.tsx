@@ -70,12 +70,15 @@ export function AnalysisView({
 
   // Prefer the locally selected file (instant preview) over any remote URL.
   const mediaSrc = localFileUrl || resolveRemoteMediaUrl(session);
-  const imageSrc =
-    localFileUrl ||
-    (session as any).image_info?.url ||
-    (session as any).image_info?.file_url ||
-    session.image_info?.transcript ||
-    "/clipsage-dashboard-mockup.jpg";
+const imageInfo = (session as any).image_info;
+
+const imageSrc =
+  localFileUrl ||
+  imageInfo?.url ||
+  imageInfo?.file_url ||
+  imageInfo?.src ||
+  imageInfo?.transcript ||
+  "/clipsage-dashboard-mockup.jpg";
 
   useEffect(() => {
     // Stop any playback if the underlying media changes.
