@@ -2,14 +2,20 @@
 # Combines spoken and visual analysis tracks cleanly with spelling alias fallbacks.
 
 import json
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from langchain_groq import ChatGroq
 from app.config.settings import settings
 
+# ─────────────────────────────────────────────────────────────
+# Structured analysis schema
+# ─────────────────────────────────────────────────────────────
 class Analysis(BaseModel):
     overview: str = Field(description="2–4 sentence overview")
     tldr: str = Field(description="One-line TL;DR, under 200 chars")
-    content_summary: str = Field(description="What was discussed or shown, 4–8 sentences")
+    
+    # FIXED: Hardened schema validation description context
+    content_summary: str = Field(description="What was discussed or shown, 4–8 sentences. MUST be a flat plain text string paragraph, not an array/list of strings.")
+    
     key_points: list[str] = Field(description="3–7 concrete key points")
     action_items: list[str] = Field(description="Explicit tasks, empty if none")
     topics: list[str] = Field(description="3–8 topic tags")
@@ -22,14 +28,26 @@ class Analysis(BaseModel):
     notable_quotes: list[str] = Field(description="0–5 memorable quotes")
     sentiment: str = Field(description="positive | neutral | negative | mixed")
 
+    # FIXED: Re-entrant model type safety interceptor merges array fragments cleanly into single paragraphs
+    @field_validator('content_summary', mode='before')
+    @classmethod
+    def ensure_string_paragraph(cls, v):
+        if isinstance(v, list):
+            return " ".join([str(item).strip() for item in v])
+        return str(v)
+
 
 _analysis_model = ChatGroq(model="openai/gpt-oss-120b", api_key=settings.GROQ_API_KEY, temperature=0.2).with_structured_output(Analysis)
 _chat_model = ChatGroq(model="openai/gpt-oss-120b", api_key=settings.GROQ_API_KEY, temperature=0.7)
 
+# FIXED: Strict field parameters explicitly specified inside system context to prevent tool errors
 _ANALYSIS_SYSTEM = """You are a professional media analyst.
 Analyze the provided content feed input. Generate a structured analysis mapping directly to the schema tools provided.
 If the input feed describes visual frame properties (no audio transcript text), build a rich design style overview detailing color spaces, graphics, and backgrounds.
-Do NOT talk directly to the user or return standard text blocks; you MUST execute your response by populating the structural analysis schema tools."""
+
+CRITICAL STRUCTURAL RULE:
+- 'content_summary' MUST be structured as a single plain text paragraph string block. Never return a JSON list or array list of strings for it.
+- Do NOT talk directly to the user or return standard text blocks; you MUST execute your response by populating the structural analysis schema tools."""
 
 
 def analyze(*, title: str, kind: str, source_type: str, transcript: str | None, diarization: list[dict] | None, image_info: dict | None = None) -> dict:
@@ -56,7 +74,7 @@ def analyze(*, title: str, kind: str, source_type: str, transcript: str | None, 
     try:
         return _analysis_model.invoke([("system", _ANALYSIS_SYSTEM), ("user", user_prompt)]).model_dump()
     except Exception as e:
-        return {"overview": f"Error parsing analysis structures: {str(e)}", "tldr": "Failed", "content_summary": "", "key_points": [], "action_items": [], "topics": [], "tone": "neutral", "emotions": [], "behaviour_notes": [], "notable_quotes": [], "sentiment": "neutral"}
+        return {"overview": f"Error parsing analysis structures: {str(e)}", "tldr": "Failed", "content_summary": "Fallback calculation bypassed.", "key_points": [], "action_items": [], "topics": [], "tone": "neutral", "emotions": [], "behaviour_notes": [], "notable_quotes": [], "sentiment": "neutral"}
 
 
 def answer_question(*, session: dict, question: str) -> str:
