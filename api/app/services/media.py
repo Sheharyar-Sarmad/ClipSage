@@ -1,4 +1,6 @@
 """
+api/app/services/media.py
+
 Media utilities for ClipSage.
 
 Handles:
@@ -7,6 +9,9 @@ Handles:
 - Video frame extraction
 - Image description through Groq Vision
 - Remote media/audio downloading through yt-dlp
+
+Designed for cross-platform media processing, including
+YouTube, Shorts, Instagram, Facebook, and similar URLs.
 """
 
 import base64
@@ -16,7 +21,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -81,12 +85,9 @@ def _find_tool(
     name: str,
     extra_paths: Optional[list[str]] = None,
 ) -> str:
-    """
-    Find an executable on PATH or in common Windows locations.
-
-    FFmpeg also falls back to the executable bundled with imageio-ffmpeg.
-    """
+    """Find an executable on PATH or in common Windows locations."""
     executable = shutil.which(name)
+
     if executable:
         return executable
 
@@ -137,14 +138,14 @@ def _find_tool(
 
 
 def _resolve_tools() -> tuple[str, str]:
-    """Resolve FFmpeg and yt-dlp paths."""
+    """Resolve FFmpeg and yt-dlp paths safely at module initialization."""
     try:
         ffmpeg = _find_tool("ffmpeg")
     except FileNotFoundError:
         ffmpeg = "ffmpeg"
         logger.warning(
             "FFmpeg was not found during startup. "
-            "It will be resolved again when needed."
+            "It will be resolved on demand."
         )
 
     try:
@@ -153,7 +154,7 @@ def _resolve_tools() -> tuple[str, str]:
         ytdlp = "yt-dlp"
         logger.warning(
             "yt-dlp was not found during startup. "
-            "It will be resolved again when needed."
+            "It will be resolved on demand."
         )
 
     return ffmpeg, ytdlp
@@ -173,7 +174,7 @@ def is_audio(path: Path) -> bool:
 
 
 def is_video(path: Path) -> bool:
-    """Return True when the path points to a supported video."""
+    """Return True when the path points to a supported video file."""
     return path.suffix.lower() in VIDEO_EXTENSIONS
 
 
@@ -199,14 +200,17 @@ def detect_kind(path: Path) -> str:
 
 def extract_audio(video_or_audio: Path) -> Optional[Path]:
     """
-    Extract a mono 16 kHz WAV audio track from a media file.
+    Extract a mono 16 kHz WAV audio track safely.
 
-    Returns None when the input does not exist or contains no audio.
+    Returns None when the file does not exist or has no usable audio track.
     """
     logger.debug("Extracting audio from: %s", video_or_audio)
 
     if not video_or_audio.exists():
-        logger.warning("Media file does not exist: %s", video_or_audio)
+        logger.warning(
+            "Media file does not exist: %s",
+            video_or_audio,
+        )
         return None
 
     ffmpeg_bin = _find_tool("ffmpeg")
@@ -240,15 +244,18 @@ def extract_audio(video_or_audio: Path) -> Optional[Path]:
         stderr = result.stderr or ""
 
         no_audio_markers = (
-            "Output file is empty",
+            "output file is empty",
             "does not contain any stream",
             "no audio",
             "invalid argument",
         )
 
-        if any(marker.lower() in stderr.lower() for marker in no_audio_markers):
+        if any(
+            marker in stderr.lower()
+            for marker in no_audio_markers
+        ):
             logger.info(
-                "No audio track found in %s. Continuing with visual processing.",
+                "No audio track discovered in %s.",
                 video_or_audio.name,
             )
         else:
@@ -259,13 +266,18 @@ def extract_audio(video_or_audio: Path) -> Optional[Path]:
 
         return None
 
-    if not output_path.exists() or output_path.stat().st_size == 0:
-        logger.warning("FFmpeg produced an empty audio file.")
+    if (
+        not output_path.exists()
+        or output_path.stat().st_size == 0
+    ):
+        logger.warning(
+            "FFmpeg produced an empty WAV asset."
+        )
         return None
 
     logger.info(
-        "Audio extracted successfully: %s bytes.",
-        output_path.stat().st_size,
+        "Audio extracted successfully: %s",
+        output_path,
     )
 
     return output_path
@@ -274,10 +286,16 @@ def extract_audio(video_or_audio: Path) -> Optional[Path]:
 def extract_video_frame(video_path: Path) -> Optional[Path]:
     """Extract the first frame of a video as a JPEG image."""
     try:
-        logger.debug("Extracting first frame from: %s", video_path)
+        logger.debug(
+            "Extracting first frame from: %s",
+            video_path,
+        )
 
         if not video_path.exists():
-            logger.warning("Video file does not exist: %s", video_path)
+            logger.warning(
+                "Video file does not exist: %s",
+                video_path,
+            )
             return None
 
         ffmpeg_bin = _find_tool("ffmpeg")
@@ -313,7 +331,10 @@ def extract_video_frame(video_path: Path) -> Optional[Path]:
             and frame_path.exists()
             and frame_path.stat().st_size > 0
         ):
-            logger.info("Video frame extracted: %s", frame_path)
+            logger.info(
+                "Video frame extracted: %s",
+                frame_path,
+            )
             return frame_path
 
         logger.error(
@@ -322,7 +343,9 @@ def extract_video_frame(video_path: Path) -> Optional[Path]:
         )
 
     except Exception:
-        logger.exception("Unexpected error during video frame extraction.")
+        logger.exception(
+            "Unexpected error during video frame extraction."
+        )
 
     return None
 
@@ -330,9 +353,9 @@ def extract_video_frame(video_path: Path) -> Optional[Path]:
 def _build_image_data_url(path: Path) -> str:
     """Read an image and convert it into a base64 data URL."""
     with path.open("rb") as image_file:
-        encoded = base64.b64encode(image_file.read()).decode("utf-8")
-
-    extension = path.suffix.lower()
+        encoded = base64.b64encode(
+            image_file.read()
+        ).decode("utf-8")
 
     mime_types = {
         ".jpg": "image/jpeg",
@@ -343,56 +366,63 @@ def _build_image_data_url(path: Path) -> str:
         ".bmp": "image/bmp",
     }
 
-    mime_type = mime_types.get(extension, "application/octet-stream")
+    mime_type = mime_types.get(
+        path.suffix.lower(),
+        "image/jpeg",
+    )
 
     return f"data:{mime_type};base64,{encoded}"
 
 
 def describe_image(path: Path) -> dict:
     """
-    Generate a detailed description of an image using Groq Vision.
+    Analyze an image using Groq Vision with fallback models.
 
-    Returns a dictionary containing filename, transcript, and duration.
+    Returns:
+        Dictionary containing filename, transcript, and duration.
     """
-    logger.debug("Running visual analysis on: %s", path)
-
-    if not path.exists():
-        return {
-            "filename": path.name,
-            "transcript": "[Error]: Image file does not exist.",
-            "duration": None,
-        }
+    logger.info(
+        "Running multi-modal analysis on: %s",
+        path,
+    )
 
     if groq_client is None:
         return {
             "filename": path.name,
-            "transcript": "[Error]: Groq client is unavailable.",
+            "transcript": (
+                "[Error]: Groq client is unavailable."
+            ),
             "duration": None,
         }
 
     try:
         data_url = _build_image_data_url(path)
     except Exception as exc:
-        logger.exception("Failed to read image: %s", path)
+        logger.exception(
+            "Failed to read visual data from: %s",
+            path,
+        )
 
         return {
             "filename": path.name,
-            "transcript": f"[Error reading file]: {exc}",
+            "transcript": (
+                f"[Error reading visual data]: {exc}"
+            ),
             "duration": None,
         }
 
     prompt = (
-        "Describe this image in meticulous detail. Highlight the main "
-        "visual theme, color schemes, graphics, 3D layouts, backgrounds, "
-        "design motifs, and any visible written text elements clearly."
+        "Describe this layout in meticulous detail. "
+        "Highlight the main visual theme, color schemes, "
+        "graphics, design motifs, and any visible written "
+        "text elements clearly."
     )
 
-    last_error = "No vision model was processed."
+    last_captured_error = "No vision engine was processed."
 
     for model_name in VISION_MODEL_FALLBACKS:
         try:
             response = groq_client.chat.completions.create(
-                model=model_name,
                 messages=[
                     {
                         "role": "user",
@@ -410,10 +440,13 @@ def describe_image(path: Path) -> dict:
                         ],
                     }
                 ],
+                model=model_name,
                 temperature=0.2,
             )
 
-            vision_description = response.choices[0].message.content
+            vision_description = (
+                response.choices[0].message.content
+            )
 
             if not vision_description:
                 raise RuntimeError(
@@ -421,108 +454,192 @@ def describe_image(path: Path) -> dict:
                 )
 
             logger.info(
-                "Vision processing succeeded using model: %s",
+                "Vision analysis completed using model: %s",
                 model_name,
             )
 
             return {
                 "filename": path.name,
                 "transcript": (
-                    "[Visual AI Scene Analysis]: "
-                    f"{vision_description}"
+                    "[Visual AI Scene Analysis via "
+                    f"{model_name}]: {vision_description}"
                 ),
                 "duration": None,
             }
 
         except Exception as exc:
-            last_error = str(exc)
+            last_captured_error = str(exc)
+
             logger.warning(
                 "Vision model '%s' failed: %s",
                 model_name,
-                last_error,
+                last_captured_error,
             )
-
-    diagnostic_report = {
-        "error_summary": (
-            "All configured Groq Vision fallback models failed."
-        ),
-        "last_upstream_api_exception": last_error,
-        "active_models_attempted": VISION_MODEL_FALLBACKS,
-        "system_stack_trace": traceback.format_exc()[-1000:],
-    }
 
     return {
         "filename": path.name,
         "transcript": (
-            "[Vision Analysis Failed]: "
-            "All configured vision models failed. "
-            f"Debug context:\n{json.dumps(diagnostic_report, indent=2)}"
+            "[Vision Circuit Fault]: All fallbacks "
+            "exhausted. Debug info: "
+            f"{last_captured_error}"
         ),
         "duration": None,
     }
 
+
 def download_from_url(url: str) -> tuple[Path, dict]:
     """
-    Downloads remote media using yt-dlp with extensive subprocess telemetry outputs.
-    Adaptive format handling allows seamless extraction of both YouTube Shorts and standard videos.
+    Download remote media as WAV audio through yt-dlp.
+
+    The command uses:
+    - FFmpeg for audio extraction
+    - Node.js EJS runtime
+    - EJS remote components
+    - YouTube Android client
+    - IPv4 forcing
+    - Adaptive best-audio format selection
+
+    Returns:
+        A tuple containing the WAV path and metadata dictionary.
     """
-    print(f"[DEBUG LOGGER] Initiating cloud retrieval sequence tracking for URL endpoint: {url}")
+    if not url.strip():
+        raise ValueError("URL cannot be empty.")
+
+    logger.info(
+        "Initiating dynamic link download: %s",
+        url,
+    )
+
     ffmpeg_bin = _find_tool("ffmpeg")
     ytdlp_bin = _find_tool("yt-dlp")
-    
-    out_dir = Path(tempfile.mkdtemp())
-    out_template = str(out_dir / "%(id)s.%(ext)s")
-    
-    current_env = os.environ.copy()
-    if os.name != 'nt':
-        current_env["PATH"] = f"/usr/bin:{current_env.get('PATH', '')}"
 
-    # FIXED: Updated the format flag (-f) to grab standalone audio OR extract audio from the combined video file gracefully
-    cmd = [
-        ytdlp_bin, 
-        "--ffmpeg-location", ffmpeg_bin,
-        "--js-runtimes", "node",
-        "--remote-components", "ejs:github",
-        "--extractor-args", "youtube:client=android",
+    output_dir = Path(tempfile.mkdtemp(prefix="clipsage_"))
+    output_template = str(
+        output_dir / "%(id)s.%(ext)s"
+    )
+
+    current_env = os.environ.copy()
+
+    if os.name != "nt":
+        current_env["PATH"] = (
+            f"/usr/bin:{current_env.get('PATH', '')}"
+        )
+
+    command = [
+        ytdlp_bin,
+        "--ffmpeg-location",
+        ffmpeg_bin,
+        "--js-runtimes",
+        "node",
+        "--remote-components",
+        "ejs:github",
+        "--extractor-args",
+        "youtube:client=android",
         "--no-check-certificates",
-        "-f", "ba/ba*+extractaudio/b/best",            # Adaptive format ladder: grabs audio track or falls back to best stream
-        "-x", "--audio-format", "wav",                 # Instructs FFmpeg to convert whatever it downloads into a raw WAV
-        "-o", out_template, 
-        "--print-json", 
-        url
+        "--force-ipv4",
+        "-f",
+        "ba/ba*+extractaudio/b/best",
+        "-x",
+        "--audio-format",
+        "wav",
+        "-o",
+        output_template,
+        "--print-json",
+        url,
     ]
-    
-    print(f"[DEBUG LOGGER] Dispatching extractor thread matrix system command: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True, env=current_env)
-    print(f"[DEBUG LOGGER] Extraction shell runtime finished with status response: {result.returncode}")
+
+    logger.debug(
+        "Executing yt-dlp: %s",
+        " ".join(command),
+    )
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        env=current_env,
+        check=False,
+    )
 
     if result.returncode != 0:
         diagnostic_report = {
             "return_code": result.returncode,
-            "stdout_stream": result.stdout[-500:] if result.stdout else "None",
-            "stderr_stream": result.stderr[-1000:] if result.stderr else "None",
+            "stdout_stream": (
+                result.stdout[-500:]
+                if result.stdout
+                else "None"
+            ),
+            "stderr_stream": (
+                result.stderr[-1000:]
+                if result.stderr
+                else "None"
+            ),
             "targeted_extraction_url": url,
-            "workspace_directory": str(out_dir)
+            "workspace_directory": str(output_dir),
         }
-        serialized_dump = json.dumps(diagnostic_report, indent=2)
-        print(f"[CRITICAL DOWNLOAD ERROR] yt-dlp process pipeline dropped:\n{serialized_dump}")
-        raise RuntimeError(f"Media download extraction phase crashed:\n{serialized_dump}")
+
+        serialized_report = json.dumps(
+            diagnostic_report,
+            indent=2,
+        )
+
+        logger.error(
+            "Media extraction failed:\n%s",
+            serialized_report,
+        )
+
+        raise RuntimeError(
+            "Platform media extraction crashed:\n"
+            f"{serialized_report}"
+        )
+
+    metadata = {
+        "title": "Extracted Cloud Media Asset",
+        "duration": None,
+        "uploader": "Unknown Content Provider",
+    }
 
     try:
-        # Safely split logs to parse JSON metadata
-        lines = [line for line in result.stdout.strip().splitlines() if line.strip()]
-        meta = json.loads(lines[-1])
-        print(f"[DEBUG LOGGER] Meta descriptors parsed successfully. Title matched: '{meta.get('title')}'")
-    except Exception as json_err:
-        print(f"[CRITICAL JSON ERROR] Failed parsing yt-dlp metadata: {str(json_err)}")
-        meta = {"title": "Extracted Media Stream Title Unavailable", "duration": None, "uploader": "Unknown"}
+        lines = [
+            line.strip()
+            for line in result.stdout.splitlines()
+            if line.strip()
+        ]
 
-    audio_files = list(out_dir.glob("*.wav"))
+        if not lines:
+            raise ValueError(
+                "yt-dlp returned no metadata output."
+            )
+
+        metadata = json.loads(lines[-1])
+
+        logger.info(
+            "Media metadata retrieved. Title: '%s'",
+            metadata.get("title"),
+        )
+
+    except (json.JSONDecodeError, ValueError, IndexError) as exc:
+        logger.warning(
+            "Failed to parse yt-dlp metadata: %s",
+            exc,
+        )
+
+    audio_files = list(output_dir.glob("*.wav"))
+
     if not audio_files:
-        raise RuntimeError(f"FILE PIPELINE ERROR: No valid audio wav artifacts were generated inside: {out_dir}")
+        raise RuntimeError(
+            "Extraction completed but no WAV files were "
+            f"found inside: {output_dir}"
+        )
 
     return audio_files[0], {
-        "title": meta.get("title") or "Untitled Link Asset",
-        "duration": meta.get("duration"),
-        "uploader": meta.get("uploader") or "Unknown Provider",
+        "title": (
+            metadata.get("title")
+            or "Untitled Universal URL Link Asset"
+        ),
+        "duration": metadata.get("duration"),
+        "uploader": (
+            metadata.get("uploader")
+            or "Unknown Content Provider"
+        ),
     }
