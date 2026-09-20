@@ -1,12 +1,9 @@
 # api/app/services/summarization.py
 
 import json
-
 from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
-
 from app.config.settings import settings
-
 
 # ─────────────────────────────────────────────────────────────
 # Structured analysis schema
@@ -28,9 +25,17 @@ class Analysis(BaseModel):
 
 
 _analysis_model = ChatGroq(
-    model="openai/gpt-oss-120b",
+    model="llama-3.3-70b-versatile",
     api_key=settings.GROQ_API_KEY,
+    temperature=0.2,
 ).with_structured_output(Analysis)
+
+
+_chat_model = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    api_key=settings.GROQ_API_KEY,
+    temperature=0.7,
+)
 
 
 _ANALYSIS_SYSTEM = """You are a professional media analyst.
@@ -57,70 +62,66 @@ def analyze(
     source_type: str,
     transcript: str | None,
     diarization: list[dict] | None,
-    image_info: dict | None,
+    image_info: dict | None = None,
 ) -> dict:
-    header = f"Title: {title}\nKind: {kind}\nSource: {source_type}\n"
-    parts = [header]
+    content_payload = transcript or (image_info.get("transcript") if image_info else None)
+    if not content_payload:
+        content_payload = "No raw transcript text or image descriptions found for this media item."
 
-    if transcript:
-        parts.append("\n=== TRANSCRIPT ===\n" + transcript[:60000])
-
-    if diarization and isinstance(diarization, list):
-        lines = [f"[{s['speaker']}] {s['start']}–{s['end']}s" for s in diarization[:500]]
-        parts.append("\n=== SPEAKER SEGMENTS ===\n" + "\n".join(lines))
-
-    if image_info:
-        parts.append(
-            "\n=== IMAGE ===\n"
-            f"Filename: {image_info.get('filename')}\n"
-            "(No caption; analyze based on filename and any transcript.)"
-        )
-
-    result: Analysis = _analysis_model.invoke(
-        [("system", _ANALYSIS_SYSTEM), ("human", "\n".join(parts))]
+    user_prompt = (
+        f"Title: {title}\n"
+        f"Media Kind: {kind}\n"
+        f"Source Pipeline: {source_type}\n\n"
+        f"Transcript Content:\n{content_payload}\n\n"
     )
-    return result.model_dump()
 
+    if diarization:
+        user_prompt += f"Speaker Diarization Data:\n{json.dumps(diarization, indent=2)}\n"
 
-# ─────────────────────────────────────────────────────────────
-# Follow-up Q&A
-# ─────────────────────────────────────────────────────────────
-_qa_model = ChatGroq(model="openai/gpt-oss-120b", api_key=settings.GROQ_API_KEY)
-
-
-_QA_SYSTEM = """You are a helpful assistant answering questions about a specific
-piece of media. You have the transcript, speaker segments (if any), and a prior
-structured analysis.
-
-Rules:
-- Answer using ONLY the provided context.
-- If the answer is not present, say so — do not guess.
-- Be concise. Cite speaker names or timestamps where useful.
-"""
+    try:
+        messages = [
+            ("system", _ANALYSIS_SYSTEM),
+            ("user", user_prompt)
+        ]
+        structured_output = _analysis_model.invoke(messages)
+        return structured_output.model_dump()
+    except Exception as exc:
+        return {
+            "overview": f"An error occurred while compiling analysis: {str(exc)}",
+            "tldr": "Analysis generation failed.",
+            "content_summary": "Please check backend server logging outputs.",
+            "key_points": ["Review system error parameters"],
+            "action_items": [],
+            "topics": [kind, "error-fallback"],
+            "tone": "neutral",
+            "emotions": [],
+            "behaviour_notes": [],
+            "notable_quotes": [],
+            "sentiment": "neutral"
+        }
 
 
 def answer_question(*, session: dict, question: str) -> str:
-    parts = [
-        f"Title: {session.get('title')}",
-        f"Kind: {session.get('kind')}",
-        f"Source type: {session.get('source_type')}",
+    """
+    FIX: Compiles historical analysis context payloads and raw transcript 
+    data streams to safely answer user follow-up workspace queries.
+    """
+    transcript_context = session.get("transcript") or "No transcript text available."
+    analysis_context = json.dumps(session.get("analysis", {}), indent=2)
+    
+    system_prompt = (
+        "You are an AI assistant helping a user explore insights about a media item they just analyzed.\n"
+        "Answer the question accurately using ONLY the provided context and transcript details.\n"
+        "If you do not know the answer based on the text, explicitly say so.\n\n"
+        f"Media Title: {session.get('title', 'Untitled')}\n"
+        f"Pre-compiled Analysis Context:\n{analysis_context}\n\n"
+        f"Full Raw Transcript:\n{transcript_context}"
+    )
+    
+    messages = [
+        ("system", system_prompt),
+        ("user", question)
     ]
-    if session.get("language"):
-        parts.append(f"Language: {session['language']}")
-    if session.get("duration"):
-        parts.append(f"Duration: {session['duration']} seconds")
-    if session.get("transcript"):
-        parts.append("=== TRANSCRIPT ===\n" + session["transcript"][:60000])
-    if session.get("analysis"):
-        parts.append(
-            "=== PRIOR ANALYSIS ===\n"
-            + json.dumps(session["analysis"], indent=2)[:20000]
-        )
-
-    context = "\n\n".join(parts)
-
-    resp = _qa_model.invoke([
-        ("system", _QA_SYSTEM),
-        ("human", f"CONTEXT:\n{context}\n\nQUESTION: {question}"),
-    ])
-    return resp.content if isinstance(resp.content, str) else str(resp.content)
+    
+    response = _chat_model.invoke(messages)
+    return str(response.content)

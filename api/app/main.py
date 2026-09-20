@@ -1,3 +1,5 @@
+# api/app/main.py
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,14 +23,11 @@ app: FastAPI = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS 
+# FIX: Allow dynamic wildcard origins for robust production multi-domain cross-talk compatibility
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],  # Change to specific production domain names before launching commercial platforms
+    allow_credentials=False, # Must be False if using allow_origins=["*"] for global path security
     allow_methods=["*"],
     allow_headers=["*"],
 )
