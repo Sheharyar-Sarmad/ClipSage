@@ -64,17 +64,24 @@ export function Workspace() {
   }
 
   return (
-    <section id="workspace" className="mx-auto max-w-7xl scroll-mt-28 px-4 py-8 sm:px-6">
+    <section
+      id="workspace"
+      className="mx-auto w-full max-w-7xl scroll-mt-28 px-4 py-8 sm:px-6 md:px-8 lg:px-12"
+    >
       {!session && !loading && (
-        <div className="mx-auto max-w-xl">
+        <div className="mx-auto w-full max-w-xl">
           <InputPanel onSubmit={handleSubmit} loading={loading} />
         </div>
       )}
 
-      {loading && <LoadingSkeleton />}
+      {loading && (
+        <div className="mx-auto w-full max-w-4xl">
+          <LoadingSkeleton />
+        </div>
+      )}
 
       {session && (
-        <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6 duration-500">
+        <div className="animate-in fade-in slide-in-from-bottom-4 mx-auto w-full max-w-5xl space-y-6 duration-500">
           {/* Reset / Back Button — centered, clear pill style */}
           <div className="flex justify-center">
             <button
@@ -87,7 +94,11 @@ export function Workspace() {
             </button>
           </div>
 
-          <AnalysisView session={session} localFileUrl={localFileUrl} localFileName={localFile?.name} />
+          <AnalysisView
+            session={session}
+            localFileUrl={localFileUrl}
+            localFileName={localFile?.name}
+          />
 
           {/* Floating chat icon + panel */}
           <ChatPanel sessionId={session.session_id} />
