@@ -231,15 +231,13 @@ ${a.behaviour_notes.map((note) => `* ${note}`).join("\n")}
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-
   return (
- 
     <motion.div
-  initial={{ opacity: 0, y: 24 }}
-  animate={{ opacity: 1, y: 0 }}
-  transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-  className="mx-auto w-full max-w-6xl space-y-6 bg-neutral-950/20 px-4 py-6 text-white sm:px-6 md:px-8"
-></motion.div>
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      className="mx-auto w-full max-w-6xl space-y-6 bg-neutral-950/20 px-4 py-6 text-white sm:px-6 md:px-8"
+    >
       {/* Header / Toolbar */}
       <div className="flex flex-col gap-4 border-b border-white/5 pb-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
