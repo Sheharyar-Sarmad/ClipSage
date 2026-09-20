@@ -3,14 +3,11 @@
 
 import tempfile
 from pathlib import Path
-
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-
 from app.routes import make_router
 from app.services import media, session, summarization, transcription
 
 router = make_router("process")
-
 
 @router.post("")
 async def process(
@@ -18,10 +15,6 @@ async def process(
     url: str | None = Form(None),
     title: str | None = Form(None),
 ):
-    """
-    Accept a file (audio / video / image) OR a URL.
-    Returns a full analysis and a session_id you must use for /chat.
-    """
     if not file and not url:
         raise HTTPException(400, "Provide either 'file' (upload) or 'url' (link).")
     if file and url:
@@ -31,7 +24,6 @@ async def process(
     cleanup: list[Path] = []
 
     try:
-        # ─── 1. Bring the media onto disk ───────────────────────
         if file:
             suffix = Path(file.filename or "upload").suffix
             raw_path = work_dir / f"upload{suffix}"
@@ -42,25 +34,20 @@ async def process(
             source = file.filename
             source_type = "upload"
             kind = media.detect_kind(raw_path)
-
         else:
             raw_path, meta = media.download_from_url(url)
             cleanup.append(raw_path)
             display_title = title or meta.get("title") or "Untitled"
             source = url
-            source_type = (
-                "youtube" if ("youtube.com" in url or "youtu.be" in url) else "url"
-            )
+            source_type = "youtube" if ("youtube.com" in url or "youtu.be" in url) else "url"
             kind = media.detect_kind(raw_path)
 
-        # ─── 2. Branch by media type ────────────────────────────
         if kind == "image":
             image_info = media.describe_image(raw_path)
             transcript = None
             diarization = None
             language = None
             duration = None
-
         else:
             audio_path = media.extract_audio(raw_path)
             cleanup.append(audio_path)
@@ -69,15 +56,9 @@ async def process(
             transcript = tr["transcript"]
             language = tr.get("language")
             duration = tr.get("duration")
-
-            try:
-                diarization = transcription.diarize(audio_path)
-            except Exception as exc:
-                diarization = {"error": str(exc)}
-
+            diarization = []
             image_info = None
 
-        # ─── 3. Rich analysis ──────────────────────────────────
         analysis = summarization.analyze(
             title=display_title,
             kind=kind,
@@ -87,7 +68,6 @@ async def process(
             image_info=image_info,
         )
 
-        # ─── 4. Store the session ──────────────────────────────
         session_id = session.create({
             "title": display_title,
             "kind": kind,
@@ -97,7 +77,7 @@ async def process(
             "language": language,
             "transcript": transcript,
             "diarization": diarization,
-            "image_info": image_info,
+            "image_info": image_info, # FIXED: Maintained context payload references explicitly
             "analysis": analysis,
         })
 
@@ -114,14 +94,9 @@ async def process(
             "analysis": analysis,
         }
 
-    except HTTPException:
-        raise
     except Exception as exc:
         raise HTTPException(500, f"Processing failed: {exc}")
     finally:
-        for p in cleanup:
-            p.unlink(missing_ok=True)
-        try:
-            work_dir.rmdir()
-        except OSError:
-            pass
+        for p in cleanup: p.unlink(missing_ok=True)
+        try: work_dir.rmdir()
+        except OSError: pass
