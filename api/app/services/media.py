@@ -200,86 +200,50 @@ def detect_kind(path: Path) -> str:
 
 def extract_audio(video_or_audio: Path) -> Optional[Path]:
     """
-    Extract a mono 16 kHz WAV audio track safely.
-
-    Returns None when the file does not exist or has no usable audio track.
+    Extracts a mono 16 kHz WAV audio track safely from an uploaded file.
+    Applies an advanced bandpass filter to isolate human vocal frequencies (200Hz - 3kHz),
+    cutting out heavy instrumental bass and synth noise so Whisper can capture lyrics cleanly.
     """
-    logger.debug("Extracting audio from: %s", video_or_audio)
+    logger.debug("Extracting and filtering audio from: %s", video_or_audio)
 
     if not video_or_audio.exists():
-        logger.warning(
-            "Media file does not exist: %s",
-            video_or_audio,
-        )
+        logger.warning("Media file does not exist: %s", video_or_audio)
         return None
 
     ffmpeg_bin = _find_tool("ffmpeg")
+    output_path = Path(tempfile.gettempdir()) / f"extracted_{os.urandom(8).hex()}.wav"
 
-    output_path = (
-        Path(tempfile.gettempdir())
-        / f"extracted_{os.urandom(8).hex()}.wav"
-    )
+    # --- ADVANCED AUDIO FILTER MATRIX ---
+    # highpass=f=200: Cuts off everything below 200Hz (removes heavy sub-bass and drum kicks)
+    # lowpass=f=3000: Cuts off everything above 3000Hz (removes high-frequency synths, hats, and fizz)
+    # volume=1.5: Boosts the isolated vocal frequencies to make them super clear for the AI engine
+    audio_filter = "highpass=f=200,lowpass=f=3000,volume=1.5"
 
     command = [
-        ffmpeg_bin,
-        "-y",
-        "-i",
-        str(video_or_audio),
-        "-vn",
-        "-ac",
-        "1",
-        "-ar",
-        "16000",
+        ffmpeg_bin, "-y", "-i", str(video_or_audio),
+        "-vn",                                # Strip video streams completely
+        "-ac", "1",                           # Force downmix to Mono channel
+        "-ar", "16000",                       # Sample rate conversion to 16kHz
+        "-af", audio_filter,                  # Apply vocal bandpass frequency isolation filters
         str(output_path),
     ]
 
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
 
     if result.returncode != 0:
         stderr = result.stderr or ""
-
-        no_audio_markers = (
-            "output file is empty",
-            "does not contain any stream",
-            "no audio",
-            "invalid argument",
-        )
-
-        if any(
-            marker in stderr.lower()
-            for marker in no_audio_markers
-        ):
-            logger.info(
-                "No audio track discovered in %s.",
-                video_or_audio.name,
-            )
+        no_audio_markers = ("Output file is empty", "does not contain any stream", "no audio", "invalid argument")
+        if any(marker.lower() in stderr.lower() for marker in no_audio_markers):
+            logger.info("No audio track discovered in %s. Visual parsing fallback enabled.", video_or_audio.name)
         else:
-            logger.error(
-                "FFmpeg audio extraction failed: %s",
-                stderr[-1000:],
-            )
-
+            logger.error("FFmpeg audio extraction failed: %s", stderr[-1000:])
         return None
 
-    if (
-        not output_path.exists()
-        or output_path.stat().st_size == 0
-    ):
-        logger.warning(
-            "FFmpeg produced an empty WAV asset."
-        )
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        logger.warning("FFmpeg produced an empty audio wave asset.")
         return None
 
-    logger.info(
-        "Audio extracted successfully: %s",
-        output_path,
-    )
-
+    logger.info("Audio voice frequencies isolated and extracted successfully: %s", output_path)
     return output_path
 
 
@@ -484,162 +448,4 @@ def describe_image(path: Path) -> dict:
             f"{last_captured_error}"
         ),
         "duration": None,
-    }
-
-
-def download_from_url(url: str) -> tuple[Path, dict]:
-    """
-    Download remote media as WAV audio through yt-dlp.
-
-    The command uses:
-    - FFmpeg for audio extraction
-    - Node.js EJS runtime
-    - EJS remote components
-    - YouTube Android client
-    - IPv4 forcing
-    - Adaptive best-audio format selection
-
-    Returns:
-        A tuple containing the WAV path and metadata dictionary.
-    """
-    if not url.strip():
-        raise ValueError("URL cannot be empty.")
-
-    logger.info(
-        "Initiating dynamic link download: %s",
-        url,
-    )
-
-    ffmpeg_bin = _find_tool("ffmpeg")
-    ytdlp_bin = _find_tool("yt-dlp")
-
-    output_dir = Path(tempfile.mkdtemp(prefix="clipsage_"))
-    output_template = str(
-        output_dir / "%(id)s.%(ext)s"
-    )
-
-    current_env = os.environ.copy()
-
-    if os.name != "nt":
-        current_env["PATH"] = (
-            f"/usr/bin:{current_env.get('PATH', '')}"
-        )
-
-    command = [
-        ytdlp_bin,
-        "--ffmpeg-location",
-        ffmpeg_bin,
-        "--js-runtimes",
-        "node",
-        "--remote-components",
-        "ejs:github",
-        "--extractor-args",
-        "youtube:client=android",
-        "--no-check-certificates",
-        "--force-ipv4",
-        "-f",
-        "ba/ba*+extractaudio/b/best",
-        "-x",
-        "--audio-format",
-        "wav",
-        "-o",
-        output_template,
-        "--print-json",
-        url,
-    ]
-
-    logger.debug(
-        "Executing yt-dlp: %s",
-        " ".join(command),
-    )
-
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        env=current_env,
-        check=False,
-    )
-
-    if result.returncode != 0:
-        diagnostic_report = {
-            "return_code": result.returncode,
-            "stdout_stream": (
-                result.stdout[-500:]
-                if result.stdout
-                else "None"
-            ),
-            "stderr_stream": (
-                result.stderr[-1000:]
-                if result.stderr
-                else "None"
-            ),
-            "targeted_extraction_url": url,
-            "workspace_directory": str(output_dir),
-        }
-
-        serialized_report = json.dumps(
-            diagnostic_report,
-            indent=2,
-        )
-
-        logger.error(
-            "Media extraction failed:\n%s",
-            serialized_report,
-        )
-
-        raise RuntimeError(
-            "Platform media extraction crashed:\n"
-            f"{serialized_report}"
-        )
-
-    metadata = {
-        "title": "Extracted Cloud Media Asset",
-        "duration": None,
-        "uploader": "Unknown Content Provider",
-    }
-
-    try:
-        lines = [
-            line.strip()
-            for line in result.stdout.splitlines()
-            if line.strip()
-        ]
-
-        if not lines:
-            raise ValueError(
-                "yt-dlp returned no metadata output."
-            )
-
-        metadata = json.loads(lines[-1])
-
-        logger.info(
-            "Media metadata retrieved. Title: '%s'",
-            metadata.get("title"),
-        )
-
-    except (json.JSONDecodeError, ValueError, IndexError) as exc:
-        logger.warning(
-            "Failed to parse yt-dlp metadata: %s",
-            exc,
-        )
-
-    audio_files = list(output_dir.glob("*.wav"))
-
-    if not audio_files:
-        raise RuntimeError(
-            "Extraction completed but no WAV files were "
-            f"found inside: {output_dir}"
-        )
-
-    return audio_files[0], {
-        "title": (
-            metadata.get("title")
-            or "Untitled Universal URL Link Asset"
-        ),
-        "duration": metadata.get("duration"),
-        "uploader": (
-            metadata.get("uploader")
-            or "Unknown Content Provider"
-        ),
     }
