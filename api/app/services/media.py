@@ -19,10 +19,12 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
 
+# FIXED: Expanded with multiple robust fallback vision models from your catalog list
 VISION_MODEL_FALLBACKS = [
-    "llama-3.2-11b-vision-preview",
-    "llama-3.2-90b-vision-preview",
-    "qwen/qwen3.6-27b"
+    "qwen/qwen3.8-27b",
+    "qwen/qwen3.6-27b",
+    "llama-3.2-11b-vision-instruct",
+    "llama-3.2-90b-vision-instruct"
 ]
 
 try:
@@ -130,7 +132,6 @@ def extract_video_frame(video_path: Path) -> Path | None:
         unique_id = os.urandom(8).hex()
         frame_out = Path(tempfile.gettempdir()) / f"frame_{unique_id}.jpg"
 
-        # FIXED: Seeks directly to 00:00:00 to pull frame snapshot dimensions from start block flawlessly
         cmd = [
             ffmpeg_bin, "-y", "-ss", "00:00:00", "-i", str(video_path),
             "-vframes", "1", "-q:v", "2", str(frame_out)
@@ -173,7 +174,6 @@ def describe_image(path: Path) -> dict:
                 messages=[
                     {
                         "role": "user",
-                        # FIXED: Restored complete key and string block quotation pairing syntax 
                         "content": [
                             {
                                 "type": "text", 
@@ -186,8 +186,13 @@ def describe_image(path: Path) -> dict:
                 model=model_candidate,
                 temperature=0.2,
             )
-            # FIXED: Synced variable output accessor layer mapping paths
-            vision_description = chat_completion.choices[0].message.content
+            # Safe response parsing to fit official SDK return structures
+            choices_data = chat_completion.choices
+            if isinstance(choices_data, list) and len(choices_data) > 0:
+                vision_description = choices_data[0].message.content
+            else:
+                vision_description = choices_data.message.content
+                
             print(f"[DEBUG LOGGER] Vision processing successful using: {model_candidate}")
             return {
                 "filename": path.name,
@@ -199,9 +204,20 @@ def describe_image(path: Path) -> dict:
             print(f"[WARNING LOGGER] Model '{model_candidate}' failed: {last_captured_error}")
             continue
 
+    exc_type, exc_obj, exc_tb = sys.exc_info()
+    formatted_stack = traceback.format_exc()
+    
+    diagnostic_debug_report = {
+        "error_summary": "All mapped Groq Vision processing engine fallback chains were completely exhausted.",
+        "last_upstream_api_exception": last_captured_error,
+        "active_models_attempted": VISION_MODEL_FALLBACKS,
+        "failed_script_line_marker": exc_tb.tb_lineno if exc_tb else "Unknown",
+        "system_stack_trace": formatted_stack[-1000:]
+    }
+    
     return {
         "filename": path.name,
-        "transcript": f"[Vision failure fallback]: Analysis could not be completed. Details: {last_captured_error}",
+        "transcript": f"[Extreme Error Vision Circuit Blocked]: Analysis failed. Granular Debug Context:\n{json.dumps(diagnostic_debug_report, indent=2)}",
         "duration": None,
     }
 
@@ -231,7 +247,6 @@ def download_from_url(url: str) -> tuple[Path, dict]:
     if not audio_files:
         raise RuntimeError("yt-dlp did not produce a wav file")
 
-    # FIXED: Elements indexed properly to align tuple signatures neatly
     return audio_files[0], {
         "title": meta.get("title") or "Untitled Link Asset",
         "duration": meta.get("duration"),
