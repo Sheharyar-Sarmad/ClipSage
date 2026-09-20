@@ -90,7 +90,10 @@ def extract_audio(video_or_audio: Path) -> Path:
     Extract mono 16kHz audio from any media file using ffmpeg.
     Uses FFMPEG_BIN resolved at module load.
     """
-    out = Path(tempfile.mktemp(suffix=".mp3"))
+    # Fix: Correctly initialize file path with secure stream configurations
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
+        out = Path(tmp_file.name)
+        
     cmd = [
         FFMPEG_BIN, "-y", "-i", str(video_or_audio),
         "-ac", "1", "-ar", "16000", "-b:a", "64k",
@@ -98,6 +101,8 @@ def extract_audio(video_or_audio: Path) -> Path:
     ]
     
     result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    # Fix: Rely ONLY on the standard system returncode (0 = success)
     if result.returncode != 0:
         error_msg = result.stderr or result.stdout or f"Exit status {result.returncode}"
         raise RuntimeError(f"FFmpeg conversion error: {error_msg}")
