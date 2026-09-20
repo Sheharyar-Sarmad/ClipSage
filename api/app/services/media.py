@@ -110,7 +110,7 @@ def describe_image(path: Path) -> dict:
         )
 
         # FIXED: Pulled from correct choices object attribute formatting parameters
-        vision_description = chat_completion.choices.message.content
+        vision_description = chat_completion.choices[0].message.content
         return {
             "filename": path.name,
             "transcript": f"[Visual AI Description]: {vision_description}",
