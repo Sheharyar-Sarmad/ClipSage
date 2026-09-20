@@ -108,12 +108,23 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  html,
+  body {
+    /* Kill horizontal scroll globally — this was previously targeting a
+       nonexistent `.body` class and doing nothing. */
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
   body {
     @apply bg-background text-foreground;
   }
+
   html {
     @apply font-sans;
   }
+
   /* Smooth scrolling base */
   html.lenis,
   html.lenis body {
@@ -128,4 +139,40 @@
   .lenis.lenis-stopped {
     overflow: hidden;
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Professional Y-axis scrollbar styling                                  */
+/* ---------------------------------------------------------------------- */
+
+/* Firefox */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: #fb923c oklch(0.145 0 0 / 60%);
+}
+
+/* WebKit (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 0; /* hide any residual horizontal scrollbar track */
+}
+
+::-webkit-scrollbar-track {
+  background: oklch(0.145 0 0 / 40%);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #fb923c 0%, #f97316 100%);
+  border-radius: 9999px;
+  border: 2px solid oklch(0.145 0 0 / 40%);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #fdba74 0%, #fb923c 100%);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

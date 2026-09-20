@@ -20,10 +20,39 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ClipSage — AI media intelligence",
+  title: "ClipSage — AI Media Intelligence",
   description:
-    "Turn audio, video, and images into structured notes: transcript, summary, key points, action items, tone, emotions, and follow-up Q&A.",
+    "Turn audio, video, and images into structured notes: transcripts, summaries, key points, action items, tone, emotions, and follow-up Q&A.",
   authors: [{ name: "Sheharyar Sarmad" }],
+
+  icons: {
+    icon: "/clipsage-meta-logo.png",
+    apple: "/clipsage-meta-logo.png",
+  },
+
+  openGraph: {
+    title: "ClipSage — AI Media Intelligence",
+    description:
+      "Turn audio, video, and images into structured notes with AI-powered transcription, analysis, summarization, and conversational Q&A.",
+    type: "website",
+    siteName: "ClipSage",
+    images: [
+      {
+        url: "/clipsage-meta-home-banner.png",
+        width: 1200,
+        height: 630,
+        alt: "ClipSage — AI Media Intelligence",
+      },
+    ],
+  },
+
+  twitter: {
+    card: "summary_large_image",
+    title: "ClipSage — AI Media Intelligence",
+    description:
+      "Turn audio, video, and images into structured notes with AI-powered media intelligence.",
+    images: ["/clipsage-meta-home-banner.png"],
+  },
 };
 
 export default function RootLayout({

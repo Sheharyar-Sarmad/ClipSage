@@ -1,39 +1,78 @@
 // client/components/SmoothScroll.tsx
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import Lenis from "lenis";
 
-export function SmoothScroll({ children }: { children: React.ReactNode }) {
-  const lenisRef = useRef<Lenis | null>(null);
-
+export function SmoothScroll({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   useEffect(() => {
-    // Initialize Lenis
     const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      duration: 1.0,
+      easing: (t: number) =>
+        1 - Math.pow(1 - t, 4),
+
       smoothWheel: true,
-      wheelMultiplier: 1,
-      touchMultiplier: 2,
+      wheelMultiplier: 0.9,
+      touchMultiplier: 1.5,
+
+      // Better behavior for long SaaS pages
+      syncTouch: true,
+      autoRaf: false,
     });
 
-    lenisRef.current = lenis;
-
-    // RAF loop that drives Lenis
     let rafId: number;
-    function raf(time: number) {
+
+    const raf = (time: number) => {
       lenis.raf(time);
       rafId = requestAnimationFrame(raf);
-    }
+    };
+
     rafId = requestAnimationFrame(raf);
 
-    // Cleanup on unmount
+    // Prevent Lenis from getting stuck when the tab
+    // is hidden and then becomes visible again.
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(rafId);
+      } else {
+        cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(raf);
+
+        // Reset Lenis state after tab restoration
+        lenis.resize();
+      }
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    // Handle browser resize / layout changes
+    const handleResize = () => {
+      lenis.resize();
+    };
+
+    window.addEventListener("resize", handleResize);
+
     return () => {
       cancelAnimationFrame(rafId);
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+
+      window.removeEventListener("resize", handleResize);
+
       lenis.destroy();
-      lenisRef.current = null;
     };
   }, []);
 
   return <>{children}</>;
 }
+

@@ -28,7 +28,7 @@ export function Hero() {
   return (
     <section
       ref={ref}
-      className="mx-auto max-w-6xl px-4 pt-36 pb-16 text-center sm:px-6 sm:pt-44"
+      className="mx-auto max-w-6xl px-4 pt-24 pb-12 text-center sm:px-6 sm:pt-28"
     >
       {/* Pill */}
       <div className="hero-item mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-orange-300/90 backdrop-blur">
@@ -46,10 +46,9 @@ export function Hero() {
 
       {/* Subtitle */}
       <p className="hero-item mx-auto mt-6 max-w-2xl text-base leading-relaxed text-white/60 sm:text-lg">
-        Paste a YouTube link, upload an audio file, or drop an image. ClipSage
-        transcribes, analyzes tone and emotion, extracts action items, and lets
-        you ask anything about the media — grounded in the transcript, not the
-        internet.
+        Upload a video, audio recording, or drop an image. ClipSage transcribes 
+        spoken words, runs high-tech visual frame scans, analyzes contextual tone, 
+        and extracts explicit action points—letting you interact with your media seamlessly.
       </p>
 
       {/* CTAs */}

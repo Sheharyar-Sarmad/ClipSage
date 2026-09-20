@@ -4,7 +4,7 @@ const FEATURES = [
   {
     icon: AudioLines,
     title: "Multi-format intake",
-    body: "YouTube links, audio uploads, video files, or images. One endpoint handles all input types.",
+    body: "Video, audio, or images. One streamlined endpoint handles all your native local file uploads seamlessly.",
   },
   {
     icon: Users,
