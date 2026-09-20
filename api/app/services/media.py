@@ -224,7 +224,7 @@ def describe_image(path: Path) -> dict:
 def download_from_url(url: str) -> tuple[Path, dict]:
     """
     Downloads remote media using yt-dlp with extensive subprocess telemetry outputs.
-    Optimized to safely load system node path environment layers in production.
+    Optimized to safely bypass cloud bot barriers using explicit JS runtimes and mobile headers.
     """
     print(f"[DEBUG LOGGER] Initiating cloud retrieval sequence tracking for URL endpoint: {url}")
     ffmpeg_bin = _find_tool("ffmpeg")
@@ -233,21 +233,25 @@ def download_from_url(url: str) -> tuple[Path, dict]:
     out_dir = Path(tempfile.mkdtemp())
     out_template = str(out_dir / "%(id)s.%(ext)s")
     
-    # --- CRITICAL FIX: Safe path tracing extension that doesn't break Render's builder ---
     current_env = os.environ.copy()
     if os.name != 'nt':
-        # Safely appends the global bin path to the subshell tracking context
         current_env["PATH"] = f"/usr/bin:{current_env.get('PATH', '')}"
 
+    # FIXED: Added explicit JS engine activation and disguised requests as a normal mobile client browser
     cmd = [
-        ytdlp_bin, "--ffmpeg-location", ffmpeg_bin,
-        "-f", "bestaudio/best", "-x", "--audio-format", "wav",
-        "-o", out_template, "--print-json", url
+        ytdlp_bin, 
+        "--ffmpeg-location", ffmpeg_bin,
+        "--js-runtimes", "node",                     # Explicitly forces yt-dlp to find and use nodejs
+        "--extractor-args", "youtube:client=mweb",   # Switches extraction layer to YouTube's lightweight mobile client
+        "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+        "-f", "bestaudio/best", 
+        "-x", "--audio-format", "wav",
+        "-o", out_template, 
+        "--print-json", 
+        url
     ]
     
     print(f"[DEBUG LOGGER] Dispatching extractor thread matrix system command: {' '.join(cmd)}")
-    
-    # Appended the modified env context parameter block right here
     result = subprocess.run(cmd, capture_output=True, text=True, env=current_env)
     print(f"[DEBUG LOGGER] Extraction shell runtime finished with status response: {result.returncode}")
 
