@@ -220,11 +220,10 @@ def describe_image(path: Path) -> dict:
         "transcript": f"[Extreme Error Vision Circuit Blocked]: Analysis failed. Granular Debug Context:\n{json.dumps(diagnostic_debug_report, indent=2)}",
         "duration": None,
     }
-
 def download_from_url(url: str) -> tuple[Path, dict]:
     """
     Downloads remote media using yt-dlp with extensive subprocess telemetry outputs.
-    Optimized to safely bypass cloud bot barriers using explicit JS runtimes and mobile headers.
+    Fully optimized with TV-Embedded clients to securely bypass cloud datacenter IP blocks.
     """
     print(f"[DEBUG LOGGER] Initiating cloud retrieval sequence tracking for URL endpoint: {url}")
     ffmpeg_bin = _find_tool("ffmpeg")
@@ -237,13 +236,13 @@ def download_from_url(url: str) -> tuple[Path, dict]:
     if os.name != 'nt':
         current_env["PATH"] = f"/usr/bin:{current_env.get('PATH', '')}"
 
-    # FIXED: Added explicit JS engine activation and disguised requests as a normal mobile client browser
+    # FIXED: Migrated extractor clients to 'tvembedded' to bypass data-center IP scraping bans
     cmd = [
         ytdlp_bin, 
         "--ffmpeg-location", ffmpeg_bin,
-        "--js-runtimes", "node",                     # Explicitly forces yt-dlp to find and use nodejs
-        "--extractor-args", "youtube:client=mweb",   # Switches extraction layer to YouTube's lightweight mobile client
-        "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+        "--js-runtimes", "node",
+        "--extractor-args", "youtube:client=tvembedded",  # Forces the highly secure, unblocked TV client signature
+        "--force-ipv4",                                  # Prevents erratic, blocked IPv6 cloud datacenter routing loops
         "-f", "bestaudio/best", 
         "-x", "--audio-format", "wav",
         "-o", out_template, 
