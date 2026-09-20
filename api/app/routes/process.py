@@ -1,5 +1,5 @@
 # api/app/routes/process.py
-# Ingest media (file or URL) → transcribe → analyze → create session.
+# Ingest media (file or URL) → multi-modal track parsing → analyze → create session.
 
 import tempfile
 from pathlib import Path
@@ -42,23 +42,41 @@ async def process(
             source_type = "youtube" if ("youtube.com" in url or "youtu.be" in url) else "url"
             kind = media.detect_kind(raw_path)
 
+        # ─── Multi-Modal Orchestration Pipeline ───
+        transcript = None
+        language = None
+        duration = None
+        image_info = None
+        diarization = []
+
         if kind == "image":
+            # Just extract visual context for static photos
             image_info = media.describe_image(raw_path)
-            transcript = None
-            diarization = None
-            language = None
-            duration = None
         else:
+            # 1. Attempt to capture Audio Tracks
             audio_path = media.extract_audio(raw_path)
-            cleanup.append(audio_path)
+            if audio_path:
+                cleanup.append(audio_path)
+                try:
+                    tr = transcription.transcribe(audio_path)
+                    transcript = tr["transcript"]
+                    language = tr.get("language")
+                    duration = tr.get("duration")
+                except Exception as whisper_err:
+                    print(f"[WARNING LOGGER] Whisper extraction skipped: {str(whisper_err)}")
+                    transcript = None
+            else:
+                # Video has no audio track - remains None quietly
+                transcript = None
 
-            tr = transcription.transcribe(audio_path)
-            transcript = tr["transcript"]
-            language = tr.get("language")
-            duration = tr.get("duration")
-            diarization = []
-            image_info = None
+            # 2. Extract Visual Context if it's a Video file container
+            if kind == "video":
+                video_frame_path = media.extract_video_frame(raw_path)
+                if video_frame_path:
+                    cleanup.append(video_frame_path)
+                    image_info = media.describe_image(video_frame_path)
 
+        # 3. Compile Unified Data Feed to the Summary Engine
         analysis = summarization.analyze(
             title=display_title,
             kind=kind,
@@ -77,7 +95,7 @@ async def process(
             "language": language,
             "transcript": transcript,
             "diarization": diarization,
-            "image_info": image_info, # FIXED: Maintained context payload references explicitly
+            "image_info": image_info,
             "analysis": analysis,
         })
 
