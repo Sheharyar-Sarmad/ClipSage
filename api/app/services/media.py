@@ -221,16 +221,23 @@ def describe_image(path: Path) -> dict:
         "duration": None,
     }
 
-
 def download_from_url(url: str) -> tuple[Path, dict]:
     """
     Downloads remote media using yt-dlp with extensive subprocess telemetry outputs.
+    Optimized to safely load system node path environment layers in production.
     """
+    print(f"[DEBUG LOGGER] Initiating cloud retrieval sequence tracking for URL endpoint: {url}")
     ffmpeg_bin = _find_tool("ffmpeg")
     ytdlp_bin = _find_tool("yt-dlp")
     
     out_dir = Path(tempfile.mkdtemp())
     out_template = str(out_dir / "%(id)s.%(ext)s")
+    
+    # --- CRITICAL FIX: Safe path tracing extension that doesn't break Render's builder ---
+    current_env = os.environ.copy()
+    if os.name != 'nt':
+        # Safely appends the global bin path to the subshell tracking context
+        current_env["PATH"] = f"/usr/bin:{current_env.get('PATH', '')}"
 
     cmd = [
         ytdlp_bin, "--ffmpeg-location", ffmpeg_bin,
@@ -238,14 +245,38 @@ def download_from_url(url: str) -> tuple[Path, dict]:
         "-o", out_template, "--print-json", url
     ]
     
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"yt-dlp download error: {result.stderr}")
+    print(f"[DEBUG LOGGER] Dispatching extractor thread matrix system command: {' '.join(cmd)}")
+    
+    # Appended the modified env context parameter block right here
+    result = subprocess.run(cmd, capture_output=True, text=True, env=current_env)
+    print(f"[DEBUG LOGGER] Extraction shell runtime finished with status response: {result.returncode}")
 
-    meta = json.loads(result.stdout.strip().splitlines()[-1])
+    if result.returncode != 0:
+        diagnostic_report = {
+            "return_code": result.returncode,
+            "stdout_stream": result.stdout[-500:] if result.stdout else "None",
+            "stderr_stream": result.stderr[-1000:] if result.stderr else "None",
+            "targeted_extraction_url": url,
+            "workspace_directory": str(out_dir)
+        }
+        serialized_dump = json.dumps(diagnostic_report, indent=2)
+        print(f"[CRITICAL DOWNLOAD ERROR] yt-dlp process pipeline dropped:\n{serialized_dump}")
+        raise RuntimeError(f"Media download extraction phase crashed:\n{serialized_dump}")
+
+    try:
+        meta = json.loads(result.stdout.strip().splitlines()[-1])
+        print(f"[DEBUG LOGGER] Meta descriptors parsed successfully. Title matched: '{meta.get('title')}'")
+    except Exception as json_err:
+        print(f"[CRITICAL JSON ERROR] Failed parsing yt-dlp metadata: {str(json_err)}")
+        meta = {"title": "Extracted Media Stream Title Unavailable", "duration": None, "uploader": "Unknown"}
+
     audio_files = list(out_dir.glob("*.wav"))
+    
     if not audio_files:
-        raise RuntimeError("yt-dlp did not produce a wav file")
+        raise RuntimeError(
+            f"FILE PIPELINE ERROR: Remote tracking completed successfully but no valid audio wav "
+            f"artifacts were generated inside workspace path directory target: {out_dir}"
+        )
 
     return audio_files[0], {
         "title": meta.get("title") or "Untitled Link Asset",
