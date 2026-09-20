@@ -461,140 +461,68 @@ def describe_image(path: Path) -> dict:
         "duration": None,
     }
 
-
 def download_from_url(url: str) -> tuple[Path, dict]:
     """
-    Download audio from a remote URL using yt-dlp.
-
-    Returns:
-        A tuple containing:
-        - Path to the generated WAV file
-        - Metadata dictionary
+    Downloads remote media using yt-dlp with extensive subprocess telemetry outputs.
+    Adaptive format handling allows seamless extraction of both YouTube Shorts and standard videos.
     """
-    if not url.strip():
-        raise ValueError("URL cannot be empty.")
-
-    logger.info("Starting media download: %s", url)
-
+    print(f"[DEBUG LOGGER] Initiating cloud retrieval sequence tracking for URL endpoint: {url}")
     ffmpeg_bin = _find_tool("ffmpeg")
     ytdlp_bin = _find_tool("yt-dlp")
+    
+    out_dir = Path(tempfile.mkdtemp())
+    out_template = str(out_dir / "%(id)s.%(ext)s")
+    
+    current_env = os.environ.copy()
+    if os.name != 'nt':
+        current_env["PATH"] = f"/usr/bin:{current_env.get('PATH', '')}"
 
-    output_dir = Path(tempfile.mkdtemp(prefix="clipsage_"))
-    output_template = str(output_dir / "%(id)s.%(ext)s")
-
-    environment = os.environ.copy()
-
-    if os.name != "nt":
-        environment["PATH"] = (
-            f"/usr/bin:{environment.get('PATH', '')}"
-        )
-
-    command = [
-        ytdlp_bin,
-        "--ffmpeg-location",
-        ffmpeg_bin,
-        "--js-runtimes",
-        "node",
-        "--remote-components",
-        "ejs:github",
-        "--extractor-args",
-        "youtube:client=android",
+    # FIXED: Updated the format flag (-f) to grab standalone audio OR extract audio from the combined video file gracefully
+    cmd = [
+        ytdlp_bin, 
+        "--ffmpeg-location", ffmpeg_bin,
+        "--js-runtimes", "node",
+        "--remote-components", "ejs:github",
+        "--extractor-args", "youtube:client=android",
         "--no-check-certificates",
-        "-f",
-        "bestaudio/best",
-        "-x",
-        "--audio-format",
-        "wav",
-        "-o",
-        output_template,
-        "--print-json",
-        url,
+        "-f", "ba/ba*+extractaudio/b/best",            # Adaptive format ladder: grabs audio track or falls back to best stream
+        "-x", "--audio-format", "wav",                 # Instructs FFmpeg to convert whatever it downloads into a raw WAV
+        "-o", out_template, 
+        "--print-json", 
+        url
     ]
-
-    logger.debug(
-        "Running yt-dlp command: %s",
-        " ".join(command),
-    )
-
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        env=environment,
-        check=False,
-    )
+    
+    print(f"[DEBUG LOGGER] Dispatching extractor thread matrix system command: {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True, env=current_env)
+    print(f"[DEBUG LOGGER] Extraction shell runtime finished with status response: {result.returncode}")
 
     if result.returncode != 0:
         diagnostic_report = {
             "return_code": result.returncode,
-            "stdout_stream": (
-                result.stdout[-500:]
-                if result.stdout
-                else "None"
-            ),
-            "stderr_stream": (
-                result.stderr[-1000:]
-                if result.stderr
-                else "None"
-            ),
+            "stdout_stream": result.stdout[-500:] if result.stdout else "None",
+            "stderr_stream": result.stderr[-1000:] if result.stderr else "None",
             "targeted_extraction_url": url,
-            "workspace_directory": str(output_dir),
+            "workspace_directory": str(out_dir)
         }
-
-        serialized_report = json.dumps(
-            diagnostic_report,
-            indent=2,
-        )
-
-        logger.error(
-            "yt-dlp download failed:\n%s",
-            serialized_report,
-        )
-
-        raise RuntimeError(
-            "Media download failed:\n"
-            f"{serialized_report}"
-        )
-
-    metadata = {
-        "title": "Extracted Media Stream Title Unavailable",
-        "duration": None,
-        "uploader": "Unknown",
-    }
+        serialized_dump = json.dumps(diagnostic_report, indent=2)
+        print(f"[CRITICAL DOWNLOAD ERROR] yt-dlp process pipeline dropped:\n{serialized_dump}")
+        raise RuntimeError(f"Media download extraction phase crashed:\n{serialized_dump}")
 
     try:
-        stdout_lines = [
-            line.strip()
-            for line in result.stdout.splitlines()
-            if line.strip()
-        ]
+        # Safely split logs to parse JSON metadata
+        lines = [line for line in result.stdout.strip().splitlines() if line.strip()]
+        meta = json.loads(lines[-1])
+        print(f"[DEBUG LOGGER] Meta descriptors parsed successfully. Title matched: '{meta.get('title')}'")
+    except Exception as json_err:
+        print(f"[CRITICAL JSON ERROR] Failed parsing yt-dlp metadata: {str(json_err)}")
+        meta = {"title": "Extracted Media Stream Title Unavailable", "duration": None, "uploader": "Unknown"}
 
-        if stdout_lines:
-            metadata = json.loads(stdout_lines[-1])
-
-        logger.info(
-            "Media metadata parsed successfully. Title: %s",
-            metadata.get("title"),
-        )
-
-    except (json.JSONDecodeError, IndexError) as exc:
-        logger.warning(
-            "Could not parse yt-dlp metadata: %s",
-            exc,
-        )
-
-    audio_files = list(output_dir.glob("*.wav"))
-
+    audio_files = list(out_dir.glob("*.wav"))
     if not audio_files:
-        raise RuntimeError(
-            "yt-dlp completed successfully, but no WAV file "
-            f"was generated in: {output_dir}"
-        )
+        raise RuntimeError(f"FILE PIPELINE ERROR: No valid audio wav artifacts were generated inside: {out_dir}")
 
-    audio_path = audio_files[0]
-
-    return audio_path, {
-        "title": metadata.get("title") or "Untitled Link Asset",
-        "duration": metadata.get("duration"),
-        "uploader": metadata.get("uploader") or "Unknown Provider",
+    return audio_files[0], {
+        "title": meta.get("title") or "Untitled Link Asset",
+        "duration": meta.get("duration"),
+        "uploader": meta.get("uploader") or "Unknown Provider",
     }
