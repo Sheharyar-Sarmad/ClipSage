@@ -3,15 +3,21 @@
 
 import os
 import json
+import base64
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 import imageio_ffmpeg
+from groq import Groq
+from app.config.settings import settings
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
+
+# Initialize a standard Groq SDK client for multi-modal imaging tasks
+_groq_client = Groq(api_key=settings.GROQ_API_KEY)
 
 # ─── Locate ffmpeg & yt-dlp ──────────────────────────────────
 def _find_tool(name: str, extra_paths: list[str] | None = None) -> str:
@@ -92,9 +98,10 @@ def extract_audio(video_or_audio: Path) -> Path:
     """
     ffmpeg_bin = _find_tool("ffmpeg")
     
-    # Initialize file slot securely
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
-        out = Path(tmp_file.name)
+    # BULLETPROOF FIX: Generate a fresh string path inside the temp folder 
+    # to prevent write-lock/overwrite crashes from pre-created 0-byte items
+    unique_id = os.urandom(8).hex()
+    out = Path(tempfile.gettempdir()) / f"extracted_{unique_id}.mp3"
         
     cmd = [
         ffmpeg_bin, "-y", "-i", str(video_or_audio),
@@ -117,11 +124,53 @@ def extract_audio(video_or_audio: Path) -> Path:
 
 
 def describe_image(path: Path) -> dict:
-    return {
-        "filename": path.name,
-        "transcript": f"[image] {path.name}",
-        "duration": None,
-    }
+    """
+    Leverages Groq's multi-modal Llama-Vision model to read and 
+    describe the visual contents of uploaded static images.
+    """
+    try:
+        # Read and transform raw binary data into base64 strings
+        with open(path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+        
+        # Parse image mime types dynamically
+        mime_type = "image/jpeg" if path.suffix.lower() in [".jpg", ".jpeg"] else f"image/{path.suffix.lower()[1:]}"
+        data_url = f"data:{mime_type};base64,{encoded_string}"
+
+        # Invoke Groq's vision processing engine
+        chat_completion = _groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this image in detail. Highlight any visible text, logos, layout structures, colors, patterns, or contextual graphics clearly."},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": data_url,
+                            },
+                        },
+                    ],
+                }
+            ],
+            model="llama-3.2-11b-vision-preview",
+            temperature=0.2,
+        )
+
+        vision_description = chat_completion.choices.message.content
+        return {
+            "filename": path.name,
+            "transcript": f"[Visual AI Description]: {vision_description}",
+            "duration": None,
+        }
+        
+    except Exception as exc:
+        # Graceful fallback descriptor to prevent server error loopings
+        return {
+            "filename": path.name,
+            "transcript": f"[Visual Content Bypass]: An asset titled '{path.stem}' was uploaded.",
+            "duration": None,
+        }
 
 
 def download_from_url(url: str) -> tuple[Path, dict]:
@@ -156,7 +205,6 @@ def download_from_url(url: str) -> tuple[Path, dict]:
     if not audio_files:
         raise RuntimeError("yt-dlp did not produce an audio file")
 
-    # FIXED: Safely return a single Path object (element 0) to align with type hints
     return audio_files[0], {
         "title": meta.get("title"),
         "duration": meta.get("duration"),
