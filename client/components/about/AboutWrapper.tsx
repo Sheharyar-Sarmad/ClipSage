@@ -51,9 +51,9 @@ const PIPELINE_STEPS = [
   },
   {
     icon: Database,
-    title: "Persist",
+    title: "Sessionize",
     description:
-      "Session state and analysis results are stored through a PostgreSQL-backed session service so previous analyses remain accessible.",
+      "Each analysis is assigned a UUID and kept in a lightweight in-memory session store, so the chat endpoint can reuse the same context without re-uploading media.",
   },
   {
     icon: Sparkles,
@@ -91,9 +91,13 @@ const TECH_STACK = [
     items: ["ffmpeg", "imageio-ffmpeg", "yt-dlp"],
   },
   {
-    category: "Data & Persistence",
+    category: "Session Layer",
     icon: Database,
-    items: ["PostgreSQL", "psycopg (binary)", "psycopg-pool"],
+    items: [
+      "In-memory dict store",
+      "UUID-keyed sessions",
+      "Thread-safe (RLock)",
+    ],
   },
   {
     category: "Frontend",
@@ -121,7 +125,7 @@ const PRINCIPLES = [
   "Every analysis is grounded in the actual transcript and available media context.",
   "Local files preview instantly in the browser without unnecessary round trips.",
   "The pipeline is modular, keeping ingestion, transcription, analysis, summarization, and sessions separated.",
-  "Voice in, voice out — ask questions by microphone and have answers read back to you.",
+  "Sessions are intentionally lightweight and ephemeral — restarting the API clears them, keeping the demo stateless.",
 ];
 
 // ---------------------------------------------------------------------------
@@ -150,25 +154,12 @@ export function AboutWrapper() {
       timeline
         .fromTo(
           heroBadgeRef.current,
-          {
-            opacity: 0,
-            y: 20,
-            scale: 0.96,
-          },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.7,
-          },
+          { opacity: 0, y: 20, scale: 0.96 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.7 },
         )
         .fromTo(
           heroTitleRef.current,
-          {
-            opacity: 0,
-            y: 35,
-            filter: "blur(8px)",
-          },
+          { opacity: 0, y: 35, filter: "blur(8px)" },
           {
             opacity: 1,
             y: 0,
@@ -179,30 +170,14 @@ export function AboutWrapper() {
         )
         .fromTo(
           heroTextRef.current,
-          {
-            opacity: 0,
-            y: 20,
-          },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.7,
-          },
+          { opacity: 0, y: 20 },
+          { opacity: 1, y: 0, duration: 0.7 },
           "-=0.5",
         )
         .fromTo(
           heroActionsRef.current,
-          {
-            opacity: 0,
-            y: 20,
-            scale: 0.97,
-          },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.6,
-          },
+          { opacity: 0, y: 20, scale: 0.97 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.6 },
           "-=0.4",
         );
     }, heroRef);
@@ -261,7 +236,7 @@ export function AboutWrapper() {
             </Link>
 
             <a
-              href="https://github.com"
+              href="https://github.com/Sheharyar-Sarmad/ClipSage"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white/80 transition hover:bg-white/10"
@@ -280,10 +255,7 @@ export function AboutWrapper() {
           initial={{ opacity: 0, y: 50 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
-          transition={{
-            duration: 0.8,
-            ease: [0.22, 1, 0.36, 1],
-          }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
           className="mt-32"
         >
           <motion.div
@@ -307,31 +279,15 @@ export function AboutWrapper() {
               return (
                 <motion.div
                   key={step.title}
-                  initial={{
-                    opacity: 0,
-                    y: 35,
-                    scale: 0.97,
-                  }}
-                  whileInView={{
-                    opacity: 1,
-                    y: 0,
-                    scale: 1,
-                  }}
-                  viewport={{
-                    once: true,
-                    margin: "-60px",
-                  }}
+                  initial={{ opacity: 0, y: 35, scale: 0.97 }}
+                  whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                  viewport={{ once: true, margin: "-60px" }}
                   transition={{
                     duration: 0.55,
                     delay: index * 0.08,
                     ease: [0.22, 1, 0.36, 1],
                   }}
-                  whileHover={{
-                    y: -6,
-                    transition: {
-                      duration: 0.2,
-                    },
-                  }}
+                  whileHover={{ y: -6, transition: { duration: 0.2 } }}
                   className="group relative overflow-hidden rounded-2xl border border-white/10 bg-neutral-900/40 p-5 backdrop-blur-xl transition-colors duration-300 hover:border-orange-500/30 hover:bg-orange-500/[0.04]"
                 >
                   <div className="absolute right-4 top-4 text-4xl font-bold text-white/[0.04] transition-all duration-300 group-hover:text-orange-500/[0.08]">
@@ -363,10 +319,7 @@ export function AboutWrapper() {
           initial={{ opacity: 0, y: 50 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
-          transition={{
-            duration: 0.8,
-            ease: [0.22, 1, 0.36, 1],
-          }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
           className="mt-32"
         >
           <motion.div
@@ -390,31 +343,15 @@ export function AboutWrapper() {
               return (
                 <motion.div
                   key={group.category}
-                  initial={{
-                    opacity: 0,
-                    y: 35,
-                    scale: 0.97,
-                  }}
-                  whileInView={{
-                    opacity: 1,
-                    y: 0,
-                    scale: 1,
-                  }}
-                  viewport={{
-                    once: true,
-                    margin: "-60px",
-                  }}
+                  initial={{ opacity: 0, y: 35, scale: 0.97 }}
+                  whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                  viewport={{ once: true, margin: "-60px" }}
                   transition={{
                     duration: 0.55,
                     delay: index * 0.07,
                     ease: [0.22, 1, 0.36, 1],
                   }}
-                  whileHover={{
-                    y: -5,
-                    transition: {
-                      duration: 0.2,
-                    },
-                  }}
+                  whileHover={{ y: -5, transition: { duration: 0.2 } }}
                   className="group rounded-2xl border border-white/10 bg-neutral-900/40 p-5 backdrop-blur-xl transition-colors duration-300 hover:border-orange-500/20 hover:bg-orange-500/[0.03]"
                 >
                   <div className="mb-4 flex items-center gap-2.5">
@@ -431,14 +368,8 @@ export function AboutWrapper() {
                     {group.items.map((item, itemIndex) => (
                       <motion.span
                         key={item}
-                        initial={{
-                          opacity: 0,
-                          scale: 0.9,
-                        }}
-                        whileInView={{
-                          opacity: 1,
-                          scale: 1,
-                        }}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        whileInView={{ opacity: 1, scale: 1 }}
                         viewport={{ once: true }}
                         transition={{
                           duration: 0.25,
@@ -461,24 +392,10 @@ export function AboutWrapper() {
         {/* ================================================================ */}
 
         <motion.section
-          initial={{
-            opacity: 0,
-            y: 50,
-            scale: 0.98,
-          }}
-          whileInView={{
-            opacity: 1,
-            y: 0,
-            scale: 1,
-          }}
-          viewport={{
-            once: true,
-            margin: "-100px",
-          }}
-          transition={{
-            duration: 0.8,
-            ease: [0.22, 1, 0.36, 1],
-          }}
+          initial={{ opacity: 0, y: 50, scale: 0.98 }}
+          whileInView={{ opacity: 1, y: 0, scale: 1 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
           className="mt-32 rounded-3xl border border-orange-500/20 bg-orange-500/5 p-8 shadow-[0_0_40px_rgba(249,115,22,0.05)] sm:p-10"
         >
           <motion.div
@@ -499,19 +416,10 @@ export function AboutWrapper() {
             {PRINCIPLES.map((principle, index) => (
               <motion.div
                 key={principle}
-                initial={{
-                  opacity: 0,
-                  x: index % 2 === 0 ? -20 : 20,
-                }}
-                whileInView={{
-                  opacity: 1,
-                  x: 0,
-                }}
+                initial={{ opacity: 0, x: index % 2 === 0 ? -20 : 20 }}
+                whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
-                transition={{
-                  duration: 0.5,
-                  delay: index * 0.08,
-                }}
+                transition={{ duration: 0.5, delay: index * 0.08 }}
                 className="flex items-start gap-3"
               >
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
@@ -529,33 +437,15 @@ export function AboutWrapper() {
         {/* ================================================================ */}
 
         <motion.section
-          initial={{
-            opacity: 0,
-            y: 50,
-          }}
-          whileInView={{
-            opacity: 1,
-            y: 0,
-          }}
-          viewport={{
-            once: true,
-            margin: "-100px",
-          }}
-          transition={{
-            duration: 0.8,
-            ease: [0.22, 1, 0.36, 1],
-          }}
+          initial={{ opacity: 0, y: 50 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
           className="mt-32 flex flex-col items-center gap-6 border-t border-white/5 pt-16 text-center"
         >
           <motion.h2
-            initial={{
-              opacity: 0,
-              y: 20,
-            }}
-            whileInView={{
-              opacity: 1,
-              y: 0,
-            }}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
             className="text-2xl font-bold text-white/90 sm:text-3xl"
@@ -565,19 +455,10 @@ export function AboutWrapper() {
           </motion.h2>
 
           <motion.p
-            initial={{
-              opacity: 0,
-              y: 15,
-            }}
-            whileInView={{
-              opacity: 1,
-              y: 0,
-            }}
+            initial={{ opacity: 0, y: 15 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{
-              duration: 0.6,
-              delay: 0.1,
-            }}
+            transition={{ duration: 0.6, delay: 0.1 }}
             className="max-w-xl text-sm leading-6 text-white/50"
           >
             Whether it's a meeting recording, a fan-made edit, or a stack of
@@ -586,21 +467,10 @@ export function AboutWrapper() {
           </motion.p>
 
           <motion.div
-            initial={{
-              opacity: 0,
-              y: 15,
-              scale: 0.96,
-            }}
-            whileInView={{
-              opacity: 1,
-              y: 0,
-              scale: 1,
-            }}
+            initial={{ opacity: 0, y: 15, scale: 0.96 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
             viewport={{ once: true }}
-            transition={{
-              duration: 0.5,
-              delay: 0.2,
-            }}
+            transition={{ duration: 0.5, delay: 0.2 }}
             className="flex items-center gap-3"
           >
             <Link
