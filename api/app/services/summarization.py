@@ -5,6 +5,9 @@ from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
 from app.config.settings import settings
 
+# ─────────────────────────────────────────────────────────────
+# Structured analysis schema
+# ─────────────────────────────────────────────────────────────
 class Analysis(BaseModel):
     overview: str = Field(description="2–4 sentence overview")
     tldr: str = Field(description="One-line TL;DR, under 200 chars")
@@ -14,9 +17,16 @@ class Analysis(BaseModel):
     topics: list[str] = Field(description="3–8 topic tags")
     tone: str = Field(description="Overall tone: formal, casual, tense, warm, etc.")
     emotions: list[str] = Field(description="Emotional cues, 0–6 entries")
-    behaviour_notes: list[str] = Field(description="Non-verbal cues, speaker dynamics, engagement signals (0–8)")
+    
+    # FIXED: Added field alignment mapping so alternative spellings do not cause 400 schema faults
+    behaviour_notes: list[str] = Field(
+        description="Non-verbal cues, speaker dynamics, engagement signals (0–8)",
+        validation_alias="behavior_notes"
+    )
+    
     notable_quotes: list[str] = Field(description="0–5 memorable quotes")
     sentiment: str = Field(description="positive | neutral | negative | mixed")
+
 
 # FIXED: Migrated from deprecated engines to active production tokens
 _analysis_model = ChatGroq(model="openai/gpt-oss-120b", api_key=settings.GROQ_API_KEY, temperature=0.2).with_structured_output(Analysis)
@@ -25,6 +35,7 @@ _chat_model = ChatGroq(model="openai/gpt-oss-120b", api_key=settings.GROQ_API_KE
 _ANALYSIS_SYSTEM = """You are a professional media analyst.
 Produce a structured analysis of what is happening: what is being said, tone, emotions, and key takeaways.
 Do NOT invent facts. Omit fields if not supported by the input content."""
+
 
 def analyze(*, title: str, kind: str, source_type: str, transcript: str | None, diarization: list[dict] | None, image_info: dict | None = None) -> dict:
     content_payload = transcript or (image_info.get("transcript") if image_info else None)
@@ -38,6 +49,7 @@ def analyze(*, title: str, kind: str, source_type: str, transcript: str | None, 
         return _analysis_model.invoke([("system", _ANALYSIS_SYSTEM), ("user", user_prompt)]).model_dump()
     except Exception as e:
         return {"overview": f"Error: {str(e)}", "tldr": "Failed", "content_summary": "", "key_points": [], "action_items": [], "topics": [], "tone": "neutral", "emotions": [], "behaviour_notes": [], "notable_quotes": [], "sentiment": "neutral"}
+
 
 def answer_question(*, session: dict, question: str) -> str:
     """
