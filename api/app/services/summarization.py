@@ -23,20 +23,20 @@ class Analysis(BaseModel):
     notable_quotes: list[str] = Field(description="0–5 memorable quotes")
     sentiment: str = Field(description="positive | neutral | negative | mixed")
 
-
+# FIXED: Changed deprecated model to the updated working identifier string
 _analysis_model = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="openai/gpt-oss-120b",
     api_key=settings.GROQ_API_KEY,
     temperature=0.2,
 ).with_structured_output(Analysis)
 
 
+# FIXED: Changed chat follow-up model identifier to match active API catalogs
 _chat_model = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="openai/gpt-oss-120b",
     api_key=settings.GROQ_API_KEY,
     temperature=0.7,
 )
-
 
 _ANALYSIS_SYSTEM = """You are a professional media analyst.
 
