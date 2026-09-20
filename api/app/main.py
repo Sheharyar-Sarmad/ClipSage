@@ -23,11 +23,11 @@ app: FastAPI = FastAPI(
     lifespan=lifespan,
 )
 
-# FIX: Allow dynamic wildcard origins for robust production multi-domain cross-talk compatibility
+# FIXED: Global wildcard config for unblocked full-stack cloud messaging
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to specific production domain names before launching commercial platforms
-    allow_credentials=False, # Must be False if using allow_origins=["*"] for global path security
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

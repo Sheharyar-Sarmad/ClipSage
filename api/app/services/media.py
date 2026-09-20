@@ -88,23 +88,29 @@ def detect_kind(path: Path) -> str:
 def extract_audio(video_or_audio: Path) -> Path:
     """
     Extract mono 16kHz audio from any media file using ffmpeg.
-    Uses FFMPEG_BIN resolved at module load.
+    Finds the tool path dynamically to prevent cloud path locks.
     """
-    # Fix: Correctly initialize file path with secure stream configurations
+    ffmpeg_bin = _find_tool("ffmpeg")
+    
+    # Initialize file slot securely
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
         out = Path(tmp_file.name)
         
     cmd = [
-        FFMPEG_BIN, "-y", "-i", str(video_or_audio),
+        ffmpeg_bin, "-y", "-i", str(video_or_audio),
         "-ac", "1", "-ar", "16000", "-b:a", "64k",
         str(out),
     ]
     
     result = subprocess.run(cmd, capture_output=True, text=True)
     
-    # Fix: Rely ONLY on the standard system returncode (0 = success)
+    # Validate actual execution status code from the operating system
     if result.returncode != 0:
         error_msg = result.stderr or result.stdout or f"Exit status {result.returncode}"
+        if "Copyright" in error_msg and "\n" in error_msg:
+            lines = error_msg.splitlines()
+            clean_lines = [l for l in lines if not l.startswith("  ") and "built with" not in l]
+            error_msg = " | ".join(clean_lines[-3:])
         raise RuntimeError(f"FFmpeg conversion error: {error_msg}")
         
     return out
@@ -120,14 +126,17 @@ def describe_image(path: Path) -> dict:
 
 def download_from_url(url: str) -> tuple[Path, dict]:
     """
-    Download audio using YTDLP_BIN resolved at module load.
+    Download audio using yt-dlp resolved dynamically.
     """
+    ffmpeg_bin = _find_tool("ffmpeg")
+    ytdlp_bin = _find_tool("yt-dlp")
+    
     out_dir = Path(tempfile.mkdtemp())
     out_template = str(out_dir / "%(id)s.%(ext)s")
 
     cmd = [
-        YTDLP_BIN,
-        "--ffmpeg-location", FFMPEG_BIN,
+        ytdlp_bin,
+        "--ffmpeg-location", ffmpeg_bin,
         "-f", "bestaudio/best",
         "-x", "--audio-format", "mp3",
         "--audio-quality", "64K",
@@ -147,6 +156,7 @@ def download_from_url(url: str) -> tuple[Path, dict]:
     if not audio_files:
         raise RuntimeError("yt-dlp did not produce an audio file")
 
+    # FIXED: Safely return a single Path object (element 0) to align with type hints
     return audio_files[0], {
         "title": meta.get("title"),
         "duration": meta.get("duration"),
