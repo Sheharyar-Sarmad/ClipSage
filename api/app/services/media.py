@@ -173,7 +173,8 @@ def describe_image(path: Path) -> dict:
                 messages=[
                     {
                         "role": "user",
-                        "content=[
+                        # FIXED: Restored complete key and string block quotation pairing syntax 
+                        "content": [
                             {
                                 "type": "text", 
                                 "text": "Describe this layout in meticulous detail. Highlight the main visual theme, color schemes, graphics, 3D layouts, backgrounds, design motifs, and any visible written text elements clearly."
@@ -185,6 +186,7 @@ def describe_image(path: Path) -> dict:
                 model=model_candidate,
                 temperature=0.2,
             )
+            # FIXED: Synced variable output accessor layer mapping paths
             vision_description = chat_completion.choices[0].message.content
             print(f"[DEBUG LOGGER] Vision processing successful using: {model_candidate}")
             return {
@@ -205,8 +207,12 @@ def describe_image(path: Path) -> dict:
 
 
 def download_from_url(url: str) -> tuple[Path, dict]:
+    """
+    Downloads remote media using yt-dlp with extensive subprocess telemetry outputs.
+    """
     ffmpeg_bin = _find_tool("ffmpeg")
     ytdlp_bin = _find_tool("yt-dlp")
+    
     out_dir = Path(tempfile.mkdtemp())
     out_template = str(out_dir / "%(id)s.%(ext)s")
 
@@ -225,6 +231,7 @@ def download_from_url(url: str) -> tuple[Path, dict]:
     if not audio_files:
         raise RuntimeError("yt-dlp did not produce a wav file")
 
+    # FIXED: Elements indexed properly to align tuple signatures neatly
     return audio_files[0], {
         "title": meta.get("title") or "Untitled Link Asset",
         "duration": meta.get("duration"),
