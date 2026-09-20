@@ -78,8 +78,7 @@ app: FastAPI = FastAPI(
 # CORS — locked to the deployed frontend + local dev
 
 ALLOWED_ORIGINS = [
-    "https://clipsage-gamma.vercel.app",
-    "http://localhost:3000",
+    "https://clipsage-gamma.vercel.app"
 ]
 
 app.add_middleware(
