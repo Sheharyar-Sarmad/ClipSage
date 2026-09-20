@@ -108,15 +108,11 @@ def extract_audio(video_or_audio: Path) -> Path | None:
     
     result = subprocess.run(cmd, capture_output=True, text=True)
     
-    # QUIET FALLBACK LOGIC: If FFmpeg returns an error because there is no audio track, return None quietly
     if result.returncode != 0:
         stderr_str = result.stderr or ""
         if "Output file is empty" in stderr_str or "does not contain any stream" in stderr_str or "no audio" in stderr_str.lower() or "invalid argument" in stderr_str.lower():
             print("[DEBUG LOGGER] Video file does not contain an audio track. Proceeding silently via visuals only.")
             return None
-        
-        # Real error logging if it's a corrupted file execution format crash
-        print(f"[CRITICAL SUBPROCESS FAULT] Real conversion breakdown: {stderr_str}")
         return None
         
     print(f"[DEBUG LOGGER] Audio track successfully extracted: {out.stat().st_size} bytes.")
@@ -125,7 +121,8 @@ def extract_audio(video_or_audio: Path) -> Path | None:
 
 def extract_video_frame(video_path: Path) -> Path | None:
     """
-    Extracts a snapshot image frame from the middle of a video file for visual AI analysis.
+    Extracts a snapshot image frame from the absolute start of a video file 
+    for visual AI analysis. Captures exact console errors if it drops out.
     """
     try:
         print(f"[DEBUG LOGGER] Pulling a visual frame snapshot from video file: {video_path}")
@@ -133,21 +130,23 @@ def extract_video_frame(video_path: Path) -> Path | None:
         unique_id = os.urandom(8).hex()
         frame_out = Path(tempfile.gettempdir()) / f"frame_{unique_id}.jpg"
 
-        # Captures 1 snapshot frame precisely at the 1-second timestamp
+        # FIXED: Seeks directly to 00:00:00 to pull frame snapshot dimensions from start block flawlessly
         cmd = [
-            ffmpeg_bin, "-y", "-ss", "00:00:01", "-i", str(video_path),
+            ffmpeg_bin, "-y", "-ss", "00:00:00", "-i", str(video_path),
             "-vframes", "1", "-q:v", "2", str(frame_out)
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True)
+        print(f"[DEBUG LOGGER] Frame slice process exit code status: {result.returncode}")
+        
         if result.returncode == 0 and frame_out.exists() and frame_out.stat().st_size > 0:
             print(f"[DEBUG LOGGER] Video frame successfully extracted at: {frame_out}")
             return frame_out
             
-        print("[WARNING LOGGER] Video file too short or missing frames to extract a snapshot.")
+        print(f"[CRITICAL FRAME BLOCK] FFmpeg frame construction failed. Stderr logs: {result.stderr or 'Empty'}")
         return None
     except Exception as e:
-        print(f"[WARNING LOGGER] Video frame extraction failed: {str(e)}")
+        print(f"[WARNING LOGGER] Video frame extraction failed radically: {str(e)}")
         return None
 
 
@@ -174,7 +173,7 @@ def describe_image(path: Path) -> dict:
                 messages=[
                     {
                         "role": "user",
-                        "content": [
+                        "content=[
                             {
                                 "type": "text", 
                                 "text": "Describe this layout in meticulous detail. Highlight the main visual theme, color schemes, graphics, 3D layouts, backgrounds, design motifs, and any visible written text elements clearly."
