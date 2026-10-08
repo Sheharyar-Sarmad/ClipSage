@@ -1,13 +1,19 @@
 # api/app/routes/process.py
-# Ingest media (file or URL) → multi-modal track parsing → analyze → create session.
+# Ingest media (file or URL) -> multi-modal track parsing -> analyze -> create session.
 
+import logging
 import tempfile
 from pathlib import Path
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+
 from app.routes import make_router
 from app.services import media, session, summarization, transcription
 
+logger = logging.getLogger(__name__)
+
 router = make_router("process")
+
 
 @router.post("")
 async def process(
@@ -39,44 +45,50 @@ async def process(
             cleanup.append(raw_path)
             display_title = title or meta.get("title") or "Untitled"
             source = url
-            source_type = "youtube" if ("youtube.com" in url or "youtu.be" in url) else "url"
+            source_type = (
+                "youtube" if ("youtube.com" in url or "youtu.be" in url) else "url"
+            )
             kind = media.detect_kind(raw_path)
 
         # ─── Multi-Modal Orchestration Pipeline ───
-        transcript = None
+        transcript: str | None = None
+        transcript_error: str | None = None
         language = None
         duration = None
         image_info = None
-        diarization = []
+        diarization: list[dict] = []
 
         if kind == "image":
-            # Just extract visual context for static photos
+            # Static photo: visual description only
             image_info = media.describe_image(raw_path)
         else:
-            # 1. Attempt to capture Audio Tracks
+            # 1. Audio track -> transcript
             audio_path = media.extract_audio(raw_path)
             if audio_path:
                 cleanup.append(audio_path)
                 try:
                     tr = transcription.transcribe(audio_path)
-                    transcript = tr["transcript"]
+                    transcript = (tr.get("transcript") or "").strip() or None
                     language = tr.get("language")
                     duration = tr.get("duration")
-                except Exception as whisper_err:
-                    print(f"[WARNING LOGGER] Whisper extraction skipped: {str(whisper_err)}")
-                    transcript = None
+                    if not transcript:
+                        transcript_error = "Transcription returned no speech."
+                        logger.info("Whisper returned an empty transcript.")
+                except Exception as exc:
+                    logger.exception("Transcription failed")
+                    transcript_error = f"Transcription failed: {exc}"
             else:
-                # Video has no audio track - remains None quietly
-                transcript = None
+                transcript_error = "No audio track found or audio extraction failed."
+                logger.info(transcript_error)
 
-            # 2. Extract Visual Context if it's a Video file container
+            # 2. Visual context for video containers
             if kind == "video":
                 video_frame_path = media.extract_video_frame(raw_path)
                 if video_frame_path:
                     cleanup.append(video_frame_path)
                     image_info = media.describe_image(video_frame_path)
 
-        # 3. Compile Unified Data Feed to the Summary Engine
+        # 3. Unified feed to the summary engine
         analysis = summarization.analyze(
             title=display_title,
             kind=kind,
@@ -84,20 +96,24 @@ async def process(
             transcript=transcript,
             diarization=diarization,
             image_info=image_info,
+            transcript_error=transcript_error,
         )
 
-        session_id = session.create({
-            "title": display_title,
-            "kind": kind,
-            "source": source,
-            "source_type": source_type,
-            "duration": duration,
-            "language": language,
-            "transcript": transcript,
-            "diarization": diarization,
-            "image_info": image_info,
-            "analysis": analysis,
-        })
+        session_id = session.create(
+            {
+                "title": display_title,
+                "kind": kind,
+                "source": source,
+                "source_type": source_type,
+                "duration": duration,
+                "language": language,
+                "transcript": transcript,
+                "transcript_error": transcript_error,
+                "diarization": diarization,
+                "image_info": image_info,
+                "analysis": analysis,
+            }
+        )
 
         return {
             "session_id": session_id,
@@ -107,14 +123,21 @@ async def process(
             "duration": duration,
             "language": language,
             "transcript": transcript,
+            "transcript_error": transcript_error,
             "diarization": diarization,
             "image_info": image_info,
             "analysis": analysis,
         }
 
+    except HTTPException:
+        raise
     except Exception as exc:
+        logger.exception("Processing failed")
         raise HTTPException(500, f"Processing failed: {exc}")
     finally:
-        for p in cleanup: p.unlink(missing_ok=True)
-        try: work_dir.rmdir()
-        except OSError: pass
+        for p in cleanup:
+            p.unlink(missing_ok=True)
+        try:
+            work_dir.rmdir()
+        except OSError:
+            pass

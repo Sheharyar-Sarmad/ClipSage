@@ -199,53 +199,33 @@ def detect_kind(path: Path) -> str:
 
 
 def extract_audio(video_or_audio: Path) -> Optional[Path]:
-    """
-    Extracts a mono 16 kHz WAV audio track safely from an uploaded file.
-    Applies an advanced bandpass filter to isolate human vocal frequencies (200Hz - 3kHz),
-    cutting out heavy instrumental bass and synth noise so Whisper can capture lyrics cleanly.
-    """
-    logger.debug("Extracting and filtering audio from: %s", video_or_audio)
-
+    """Extract mono 16 kHz MP3 from audio/video. No filtering."""
     if not video_or_audio.exists():
         logger.warning("Media file does not exist: %s", video_or_audio)
         return None
 
     ffmpeg_bin = _find_tool("ffmpeg")
-    output_path = Path(tempfile.gettempdir()) / f"extracted_{os.urandom(8).hex()}.wav"
-
-    # --- ADVANCED AUDIO FILTER MATRIX ---
-    # highpass=f=200: Cuts off everything below 200Hz (removes heavy sub-bass and drum kicks)
-    # lowpass=f=3000: Cuts off everything above 3000Hz (removes high-frequency synths, hats, and fizz)
-    # volume=1.5: Boosts the isolated vocal frequencies to make them super clear for the AI engine
-    audio_filter = "highpass=f=200,lowpass=f=3000,volume=1.5"
+    output_path = Path(tempfile.gettempdir()) / f"extracted_{os.urandom(8).hex()}.mp3"
 
     command = [
         ffmpeg_bin, "-y", "-i", str(video_or_audio),
-        "-vn",                                # Strip video streams completely
-        "-ac", "1",                           # Force downmix to Mono channel
-        "-ar", "16000",                       # Sample rate conversion to 16kHz
-        "-af", audio_filter,                  # Apply vocal bandpass frequency isolation filters
+        "-map", "0:a:0?",          # first audio stream, if any
+        "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k",
         str(output_path),
     ]
-
     result = subprocess.run(command, capture_output=True, text=True, check=False)
 
     if result.returncode != 0:
-        stderr = result.stderr or ""
-        no_audio_markers = ("Output file is empty", "does not contain any stream", "no audio", "invalid argument")
-        if any(marker.lower() in stderr.lower() for marker in no_audio_markers):
-            logger.info("No audio track discovered in %s. Visual parsing fallback enabled.", video_or_audio.name)
-        else:
-            logger.error("FFmpeg audio extraction failed: %s", stderr[-1000:])
+        logger.error("FFmpeg audio extraction failed:\n%s", (result.stderr or "")[-1500:])
+        output_path.unlink(missing_ok=True)
         return None
 
-    if not output_path.exists() or output_path.stat().st_size == 0:
-        logger.warning("FFmpeg produced an empty audio wave asset.")
+    if not output_path.exists() or output_path.stat().st_size < 1024:
+        logger.info("No usable audio track in %s", video_or_audio.name)
+        output_path.unlink(missing_ok=True)
         return None
 
-    logger.info("Audio voice frequencies isolated and extracted successfully: %s", output_path)
     return output_path
-
 
 def extract_video_frame(video_path: Path) -> Optional[Path]:
     """Extract the first frame of a video as a JPEG image."""
